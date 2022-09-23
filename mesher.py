@@ -2,17 +2,19 @@ import pygmsh
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.collections import PatchCollection
+import itertools
 
-def circ_points(radius,res,center=(0,0)):
+def circ_points(radius,res,center=(0,0),petals=0,petal_amp=0.1):
     thetas = np.linspace(0,2*np.pi,res,endpoint=False)
     points = []
     for t in thetas:
-        points.append((radius*np.cos(t)+center[0],radius*np.sin(t)+center[1]))
+        offset = 0 if petals == 0 else np.abs(np.cos(petals/2*t))*radius*petal_amp - 2/np.pi*radius*petal_amp #compensation so avg radius is same
+        points.append(((radius+offset)*np.cos(t)+center[0],(radius+offset)*np.sin(t)+center[1]))
     return points
 
-def plot_mesh(mesh,IOR_dict=None,show=True,ax=None):
+def plot_mesh(mesh,IOR_dict=None,show=True,ax=None,verts=3,alpha=0.2):
     points = mesh.points
-    tris = mesh.cells[1].data
+    els = mesh.cells[1].data
     materials = mesh.cell_sets.keys()
 
     if IOR_dict is not None:
@@ -29,15 +31,43 @@ def plot_mesh(mesh,IOR_dict=None,show=True,ax=None):
             color = cm(cval)
         else:
             color = "None"
-        _tris = tris[tuple(mesh.cell_sets[material])][0,:,0,:]
-        patches = []
-        for i,_tri in enumerate(_tris):
-            t=plt.Polygon(points[_tri[:3]][:,:2], ec='k', facecolor=color,lw=0.7)
-            patches.append(t)
+        _els = els[tuple(mesh.cell_sets[material])][0,:,0,:]
+        for i,_el in enumerate(_els):
+            t=plt.Polygon(points[_el[:verts]][:,:2], facecolor=color)
+            t_edge=plt.Polygon(points[_el[:verts]][:,:2], lw=0.5,color='white',alpha=alpha,fill=False)
             ax.add_patch(t)
+            ax.add_patch(t_edge)
 
     for point in points:
-        plt.plot(point[0],point[1],'ko',ms=2)
+        plt.plot(point[0],point[1],'wo',ms=1,alpha=alpha)
+
+    plt.xlim(np.min(points[:,0]),np.max(points[:,0]) )
+    plt.ylim(np.min(points[:,1]),np.max(points[:,1]) )
+    if show:
+        plt.show()
+
+def plot_mesh_expl_IOR(mesh,IORs,show=True,ax=None,verts=3,alpha=0.2):
+    points = mesh.points
+    els = mesh.cells[1].data
+
+    n,n0 = max(IORs) , min(IORs)
+
+    if show and ax is None:
+        fig,ax = plt.subplots(figsize=(5,5))
+
+    for i,el in enumerate(els):
+  
+        cval = IORs[i]/(n-n0) - n0/(n-n0)
+        cm = plt.get_cmap("viridis")
+        color = cm(cval)
+
+        t=plt.Polygon(points[el[:verts]][:,:2], facecolor=color)
+        t_edge=plt.Polygon(points[el[:verts]][:,:2], lw=0.5,color='white',alpha=alpha,fill=False)
+        ax.add_patch(t)
+        ax.add_patch(t_edge)
+
+    for point in points:
+        plt.plot(point[0],point[1],'wo',ms=1,alpha=alpha)
 
     plt.xlim(np.min(points[:,0]),np.max(points[:,0]) )
     plt.ylim(np.min(points[:,1]),np.max(points[:,1]) )
@@ -88,14 +118,14 @@ def construct_mesh2(w,r,res,ret="tuple"):
         else:
             return mesh
 
-def lantern_mesh(r_jack,r_clad,pos_core,r_core,res):
+def lantern_mesh(r_jack,r_clad,pos_core,r_core,res,petals=0,petal_amp = 0.1,mode="tri"):
     """ construct a mesh that conforms to a 'lantern' structure: circular jacker,
     smaller circular cladding, and even smaller circular inclusions (cores) at
     arbitrary locations """
 
     with pygmsh.occ.Geometry() as geom:
         jacket_base = geom.add_polygon(circ_points(r_jack,int(res/2)))
-        cladding_base = geom.add_polygon(circ_points(r_clad,res))
+        cladding_base = geom.add_polygon(circ_points(r_clad,res,petals=petals,petal_amp=petal_amp))
 
         jacket = geom.boolean_difference(jacket_base,cladding_base,delete_other = False)
         geom.add_physical(jacket,"jacket")
@@ -115,15 +145,49 @@ def lantern_mesh(r_jack,r_clad,pos_core,r_core,res):
         geom.add_physical(cores,"core")
         cladding = geom.boolean_difference(cladding_base,cores,delete_other=False)
         geom.add_physical(cladding,"cladding")
-        mesh = geom.generate_mesh(dim=2,order=2,algorithm=6)
+        algo = 6
+        if mode=="quad":
+            algo = 11
+        mesh = geom.generate_mesh(dim=2,order=2,algorithm=algo)
         mesh.cell_data["radius"] = r_clad
         return mesh
 
+def fiber_mesh(r_clad,r_core,res,mode="tri"):
+    with pygmsh.occ.Geometry() as geom:
+        cladding_base = geom.add_polygon(circ_points(r_clad,int(res/2)))
+        core = geom.add_polygon(circ_points(r_core,int(res)))
+
+        cladding = geom.boolean_difference(cladding_base,core,delete_other = False)
+        geom.add_physical(cladding,"cladding")
+        geom.add_physical(core,"core")
+
+        algo = 6
+        if mode=="quad":
+            algo = 11
+        mesh = geom.generate_mesh(dim=2,order=2,algorithm=algo)
+        mesh.cell_data["radius"] = r_core
+        return mesh
+
+def remove_face_points(mesh):
+    """ converts quad9 to quad8 """
+    new_vertex_indices = np.array(sorted(list(set(mesh.cells[1].data[:,:-1].flatten()))))
+    new_points = mesh.points[new_vertex_indices]
+    deleted_indices = mesh.cells[1].data[:,-1]
+    mesh.cells[1].data = mesh.cells[1].data[:,:-1]
+
+    for quad in mesh.cells[1].data:
+        for i,idx in enumerate(quad):
+            _shift = np.sum(idx>=deleted_indices)
+            quad[i] -= _shift
+    
+    mesh.points = new_points
+    return mesh
+
 if __name__ == "__main__":
     cores = [(0,0)] + circ_points(0.25,5)
-    m = lantern_mesh(1,0.5,cores,0.05,30)
+    m = lantern_mesh(1,0.5,cores,0.5/36,40,mode="tri",petals=5)
+    #m = remove_face_points(m)
     #m = construct_mesh2(2,0.5,30)
 
     IOR_dict = {"jacket":2,"cladding":1.5,"core":1}
-    
-    plot_mesh(m,IOR_dict)
+    plot_mesh(m,IOR_dict,verts=3)

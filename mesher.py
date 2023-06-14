@@ -1,3 +1,4 @@
+import enum
 import pygmsh
 import numpy as np
 import matplotlib.pyplot as plt
@@ -183,11 +184,84 @@ def remove_face_points(mesh):
     mesh.points = new_points
     return mesh
 
+def lantern_mesh_displaced_circles(r_jack,r_clad,pos_core,r_core,res,ds=0.1):
+
+    with pygmsh.occ.Geometry() as geom:
+        jacket_base = geom.add_polygon(circ_points(r_jack,int(res/2)))
+        cladding_base = geom.add_polygon(circ_points(r_clad,res))
+
+        jacket = geom.boolean_difference(jacket_base,cladding_base,delete_other = False)
+        geom.add_physical(jacket,"jacket")
+
+        if type(r_core) != list and type(pos_core) == list:
+            rs = [r_core] * len(pos_core)
+            ps = pos_core
+        elif type(r_core) != list and type(pos_core) != list:
+            rs = [r_core]
+            ps = [pos_core]
+
+        cores = [[],[],[],[],[],[],[]]
+        cores_flat = []
+        for r,p in zip(rs,ps):
+            #core = geom.add_disk(p,r)
+            cpoints = circ_points(r_core,res=16,center=p)
+            core = geom.add_polygon(cpoints)
+            #cores.append(core)
+
+            # add x and y displacements
+            px = (p[0]+ds,p[1])
+            cxpoints = circ_points(r_core,res=16,center=px)
+            corex = geom.add_polygon(cxpoints)
+            #cores.append(corex)
+            py = (p[0],p[1]+ds)
+            cypoints = circ_points(r_core,res=16,center=py)
+            corey = geom.add_polygon(cypoints)
+
+            core_pieces = geom.boolean_fragments([core],[corex,corey])
+            
+            for i,c in enumerate(core_pieces):
+                cores[i].append(c)
+            
+            cores_flat += core_pieces
+
+            #cores += [core_sub,intx,corex_sub]
+
+        for i,c in enumerate(cores):
+            geom.add_physical(c,"core"+str(i))
+
+        cladding = geom.boolean_difference(cladding_base,cores_flat,delete_other=False)
+        geom.add_physical(cladding,"cladding")
+        algo = 6
+        mesh = geom.generate_mesh(dim=2,order=2,algorithm=algo)
+        mesh.cell_data["radius"] = r_clad
+        return mesh
+
+
+def lantern_mesh_3PL(r,res):
+
+    with pygmsh.occ.Geometry() as geom:
+        jacket_base = geom.add_polygon(circ_points(r*8,int(2*res))) # from microscope image
+
+        center_offset = r*np.sqrt(3)/3
+        centers = [[center_offset,0],[-center_offset/2,center_offset*np.sqrt(3)/2],[-center_offset/2,-center_offset*np.sqrt(3)/2]]
+        clad0 = geom.add_polygon(circ_points(r,res,center=centers[0]))
+        clad1 = geom.add_polygon(circ_points(r,res,center=centers[1]))
+        clad2 = geom.add_polygon(circ_points(r,res,center=centers[2]))
+        full_clad = geom.boolean_union([clad0,clad1,clad2])
+
+        jacket = geom.boolean_difference(jacket_base,full_clad,delete_other = False)
+        geom.add_physical(jacket,"jacket")
+        geom.add_physical(full_clad,"cladding")
+        algo = 6
+        mesh = geom.generate_mesh(dim=2,order=2,algorithm=algo)
+        return mesh
+
 if __name__ == "__main__":
     cores = [(0,0)] + circ_points(0.25,5)
-    m = lantern_mesh(1,0.5,cores,0.5/36,40,mode="tri",petals=5)
+    m = lantern_mesh_3PL(1,16) #lantern_mesh_displaced_circles(1,0.5,cores,0.5/8,40,ds=0.05)
     #m = remove_face_points(m)
     #m = construct_mesh2(2,0.5,30)
 
-    IOR_dict = {"jacket":2,"cladding":1.5,"core":1}
+    #IOR_dict = {"jacket":2.5,"cladding":2,"core0":1,"core1":1,"core2":1,"core3":1,"core4":1.4,"core5":1.5,"core6":1.6}
+    IOR_dict = {"jacket":1.444-5.5e-3,"cladding":1.444}
     plot_mesh(m,IOR_dict,verts=3)

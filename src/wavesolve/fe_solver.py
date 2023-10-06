@@ -1,13 +1,9 @@
 """ use finite element method with quadratic triangular elements to solve for modes in the SCALAR approximation. 
-    if this works, perhaps vector forthcoming. also, maybe fe-bpm?
 """
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh
-#from numpy.linalg import eigh
-from mesher import plot_mesh,lantern_mesh,circ_points,fiber_mesh,lantern_mesh_displaced_circles,lantern_mesh_3PL,lantern_mesh_6PL
 from scipy.sparse.linalg import eigsh
-from scipy.sparse import csr_matrix
 
 def IOR_fiber(r,n,n0):
     def inner(x,y):

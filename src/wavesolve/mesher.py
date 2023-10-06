@@ -1,9 +1,6 @@
-import enum
 import pygmsh
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.collections import PatchCollection
-import itertools
 
 def circ_points(radius,res,center=(0,0),petals=0,petal_amp=0.1):
     thetas = np.linspace(0,2*np.pi,res,endpoint=False)

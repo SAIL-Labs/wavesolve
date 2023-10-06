@@ -15,7 +15,7 @@ def construct_AB(mesh,IOR_dict,k,poke_index = None):
     Returns:
     A,B: matrices
     """
-    from shape_funcs import compute_dNdN, compute_NN
+    from wavesolve.shape_funcs import compute_dNdN, compute_NN
     
     points = mesh.points
     materials = mesh.cell_sets.keys()
@@ -47,7 +47,7 @@ def construct_AB(mesh,IOR_dict,k,poke_index = None):
     return A,B
 
 def construct_AB_expl_IOR(mesh,IOR_arr,k):
-    from shape_funcs import compute_dNdN, compute_NN
+    from wavesolve.shape_funcs import compute_dNdN, compute_NN
     
     points = mesh.points
     materials = mesh.cell_sets.keys()
@@ -69,7 +69,7 @@ def construct_AB_expl_IOR(mesh,IOR_arr,k):
 
 # turns out... this isn't actually faster. lol. completely dominated by solving system, not generating matrix
 def construct_AB_fast(mesh,IOR_dict,k):
-    from shape_funcs import compute_dNdN_precomp, compute_J_and_mat, compute_NN_precomp
+    from wavesolve.shape_funcs import compute_dNdN_precomp, compute_J_and_mat, compute_NN_precomp
     
     points = mesh.points
     verts = mesh.cells[1].data
@@ -179,7 +179,7 @@ def plot_eigenvector(mesh,v,plot_mesh = False,plot_circle=False):
     plt.show()
 
 def compute_diff(tri_idx,mesh,_pinv):
-    from shape_funcs import compute_NN
+    from wavesolve.shape_funcs import compute_NN
     point_idxs = mesh.cells[1].data[tri_idx]
     points = mesh.points[point_idxs]
     N = len(mesh.points)

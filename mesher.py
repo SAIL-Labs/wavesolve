@@ -256,12 +256,45 @@ def lantern_mesh_3PL(r,res):
         mesh = geom.generate_mesh(dim=2,order=2,algorithm=algo)
         return mesh
 
+def lantern_mesh_6PL(r,res):
+    with pygmsh.occ.Geometry() as geom:
+        jacket_base = geom.add_polygon(circ_points(r*4,int(2*res))) 
+        rcore = r*9.2/255
+        center_offset = r*140/255
+        clad_base = geom.add_polygon(circ_points(r,res))
+        cores = []
+        cores.append(geom.add_polygon(circ_points(rcore,6)))
+        for i in range(5):
+            c = geom.add_polygon(circ_points(rcore,6,center=(center_offset*np.cos(2*np.pi/5*i),center_offset*np.sin(2*np.pi/5*i))))
+            cores.append(c)
+        jacket = geom.boolean_difference(jacket_base,clad_base,delete_other=False)[0]
+
+        core_circs = []
+        core_circs.append(geom.add_polygon(circ_points(rcore*4,12)))
+        for i in range(5):
+            c = geom.add_polygon(circ_points(rcore*6,12,center=(center_offset*np.cos(2*np.pi/5*i),center_offset*np.sin(2*np.pi/5*i))))
+            core_circs.append(c)
+        
+        for c in core_circs:
+            clad_base = geom.boolean_difference(clad_base,c,delete_other=False)[0]
+
+        for i in range(6):
+            core_circs[i] = geom.boolean_difference(core_circs[i],cores[i],delete_other=False)[0]
+        claddings = [clad_base]+core_circs
+        geom.add_physical(jacket,"jacket")
+        geom.add_physical(claddings,"cladding")
+        geom.add_physical(cores,"core")
+        algo = 6
+        mesh = geom.generate_mesh(dim=2,order=2,algorithm=algo)
+        return mesh        
+
 if __name__ == "__main__":
-    cores = [(0,0)] + circ_points(0.25,5)
-    m = lantern_mesh_3PL(1,16) #lantern_mesh_displaced_circles(1,0.5,cores,0.5/8,40,ds=0.05)
+    #cores = [(0,0)] + circ_points(0.25,5)
+    #m = lantern_mesh_3PL(1,16) #lantern_mesh_displaced_circles(1,0.5,cores,0.5/8,40,ds=0.05)
     #m = remove_face_points(m)
     #m = construct_mesh2(2,0.5,30)
 
     #IOR_dict = {"jacket":2.5,"cladding":2,"core0":1,"core1":1,"core2":1,"core3":1,"core4":1.4,"core5":1.5,"core6":1.6}
-    IOR_dict = {"jacket":1.444-5.5e-3,"cladding":1.444}
+    IOR_dict = {"jacket":1.444-4e-3,"cladding":1.444,"core":1.4504 }
+    m = lantern_mesh_6PL(6,16)
     plot_mesh(m,IOR_dict,verts=3)

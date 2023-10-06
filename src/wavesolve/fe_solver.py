@@ -5,14 +5,16 @@ import matplotlib.pyplot as plt
 from scipy.linalg import eigh
 from scipy.sparse.linalg import eigsh
 
-def IOR_fiber(r,n,n0):
-    def inner(x,y):
-        if x*x+y*y <= r*r:
-            return n
-        return n0
-    return inner
-
 def construct_AB(mesh,IOR_dict,k,poke_index = None):
+    """ construct the A and B matrices corresponding to the given waveguide geometry.
+    Args:
+    mesh: the waveguide mesh, produced by wavesolve.mesher or pygmsh
+    IOR_dict: dictionary that assigns each named region in the mesh to a refractive index value
+    k: free-space wavenumber of propagation
+
+    Returns:
+    A,B: matrices
+    """
     from shape_funcs import compute_dNdN, compute_NN
     
     points = mesh.points
@@ -95,6 +97,21 @@ def construct_AB_fast(mesh,IOR_dict,k):
     return A,B
 
 def solve(A,B,mesh,k,IOR_dict,plot=False):
+    """ Given the A,B matrices, solve the general eigenvalue problem A v = w B v
+        where v are the eigenvectors and w the eigenvalues.
+        Args:
+        A: A matrix of eigenvalue problem
+        B: B matrix of eigenvalue
+        mesh: the waveguide mesh, produced by wavesolve.mesher or pygmsh
+        k: free-space wavenumber of propagation
+        IOR_dict: dictionary that assigns each named region in the mesh to a refractive index value
+        plot: set True to plot eigenvectors in descending order of eigenvalue
+
+        Returns: 
+        w: list of eigenvalues in descending order
+        v: list of eigenvectors
+        N: number of non-spurious eigenvectors (guided modes) found.
+    """
     w,v = eigh(A,B)
 
     IORs = [ior[1] for ior in IOR_dict.items()]
@@ -122,6 +139,7 @@ def solve(A,B,mesh,k,IOR_dict,plot=False):
     return w[::-1],v.T[::-1],mode_count
 
 def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
+    """An extension of solve() to A and B matrices in CSR format."""
     w,v = eigsh(A,M=B,k=num_modes,which="LA")
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)

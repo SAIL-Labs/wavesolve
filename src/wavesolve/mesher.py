@@ -2,15 +2,32 @@ import pygmsh
 import numpy as np
 import matplotlib.pyplot as plt
 
-def circ_points(radius,res,center=(0,0),petals=0,petal_amp=0.1):
+def circ_points(radius,res,center=(0,0)):
+    """generates a list of points defining a circle
+    Args:
+    radius: circle radius
+    res: number of points to generate
+    center: (x,y) coords of circle center
+
+    Returns:
+    points: (res, 2) list of circle points
+    """
+     
     thetas = np.linspace(0,2*np.pi,res,endpoint=False)
     points = []
     for t in thetas:
-        offset = 0 if petals == 0 else np.abs(np.cos(petals/2*t))*radius*petal_amp - 2/np.pi*radius*petal_amp #compensation so avg radius is same
-        points.append(((radius+offset)*np.cos(t)+center[0],(radius+offset)*np.sin(t)+center[1]))
+        points.append((radius*np.cos(t)+center[0],radius*np.sin(t)+center[1]))
     return points
 
 def plot_mesh(mesh,IOR_dict=None,show=True,ax=None,verts=3,alpha=0.2):
+    """ plot a mesh and associated refractive index distribution
+    Args:
+    mesh: the mesh to be plotted
+    IOR_dict: dictionary that assigns each named region in the mesh to a refractive index value
+    show: set True to plot directly
+    ax: optionally, provide matplotlib axis object for plotting
+    """
+
     points = mesh.points
     els = mesh.cells[1].data
     materials = mesh.cell_sets.keys()
@@ -72,84 +89,6 @@ def plot_mesh_expl_IOR(mesh,IORs,show=True,ax=None,verts=3,alpha=0.2):
     if show:
         plt.show()
 
-def construct_mesh(w,r,res,ret="tuple"):
-    ''' construct triangular mesh for FE analysis. a mesh is a tuple of points and connections.
-        points is a 2D numpy array of all nodes in the mesh (whose positions are length 2 numpy arrays)
-        each element of connections is a list containing the 6 indices that locate the nodes in each tri
-
-        w: width of comp zone (assumed square)
-        r: core radius (need to make this more extensible beyond circular step-index later)
-    '''
-    with pygmsh.occ.Geometry() as geom:
-        rect = geom.add_rectangle((-w/2,-w/2,0),w,w) 
-        circ = geom.add_disk((0,0),r,mesh_size=w/res)
-        geom.boolean_difference(rect,circ,delete_other = False)
-        mesh = geom.generate_mesh(dim=2,order=2)
-        points = mesh.points
-        tris = mesh.cells[1].data
-        if ret == "tuple":
-            return (points,tris)
-        else:
-            return mesh
-
-def construct_mesh2(w,r,res,ret="tuple"):
-    ''' construct triangular mesh for FE analysis. a mesh is a tuple of points and connections.
-        points is a 2D numpy array of all nodes in the mesh (whose positions are length 2 numpy arrays)
-        each element of connections is a list containing the 6 indices that locate the nodes in each tri
-
-        w: width of comp zone (assumed square)
-        r: core radius (need to make this more extensible beyond circular step-index later)
-    '''
-    with pygmsh.occ.Geometry() as geom:
-        circ0 = geom.add_polygon(circ_points(w/2,int(res/2)))
-        circ = geom.add_polygon(circ_points(r,res))
-
-        #cladding = geom.boolean_difference(circ0,circ,)
-
-        union = geom.boolean_union([circ0,circ])
-        geom.boolean_fragments(union,circ)
-        mesh = geom.generate_mesh(dim=2,order=2,algorithm=6)
-        points = mesh.points
-        tris = mesh.cells[1].data
-        if ret == "tuple":
-            return (points,tris)
-        else:
-            return mesh
-
-def lantern_mesh(r_jack,r_clad,pos_core,r_core,res,petals=0,petal_amp = 0.1,mode="tri"):
-    """ construct a mesh that conforms to a 'lantern' structure: circular jacker,
-    smaller circular cladding, and even smaller circular inclusions (cores) at
-    arbitrary locations """
-
-    with pygmsh.occ.Geometry() as geom:
-        jacket_base = geom.add_polygon(circ_points(r_jack,int(res/2)))
-        cladding_base = geom.add_polygon(circ_points(r_clad,res,petals=petals,petal_amp=petal_amp))
-
-        jacket = geom.boolean_difference(jacket_base,cladding_base,delete_other = False)
-        geom.add_physical(jacket,"jacket")
-
-        if type(r_core) != list and type(pos_core) == list:
-            rs = [r_core] * len(pos_core)
-            ps = pos_core
-        elif type(r_core) != list and type(pos_core) != list:
-            rs = [r_core]
-            ps = [pos_core]
-
-        cores = []
-        for r,p in zip(rs,ps):
-            core = geom.add_disk(p,r,mesh_size = r)
-            cores.append(core)
-
-        geom.add_physical(cores,"core")
-        cladding = geom.boolean_difference(cladding_base,cores,delete_other=False)
-        geom.add_physical(cladding,"cladding")
-        algo = 6
-        if mode=="quad":
-            algo = 11
-        mesh = geom.generate_mesh(dim=2,order=2,algorithm=algo)
-        mesh.cell_data["radius"] = r_clad
-        return mesh
-
 def fiber_mesh(r_clad,r_core,res,mode="tri"):
     with pygmsh.occ.Geometry() as geom:
         cladding_base = geom.add_polygon(circ_points(r_clad,int(res/2)))
@@ -182,7 +121,6 @@ def remove_face_points(mesh):
     return mesh
 
 def lantern_mesh_displaced_circles(r_jack,r_clad,pos_core,r_core,res,ds=0.1):
-
     with pygmsh.occ.Geometry() as geom:
         jacket_base = geom.add_polygon(circ_points(r_jack,int(res/2)))
         cladding_base = geom.add_polygon(circ_points(r_clad,res))
@@ -235,10 +173,10 @@ def lantern_mesh_displaced_circles(r_jack,r_clad,pos_core,r_core,res,ds=0.1):
 
 
 def lantern_mesh_3PL(r,res):
-
+    """ generates a mesh for a 3-port lantern with a non-circular cladding. 
+        similar to the 3-port PL on SCExAO. """
     with pygmsh.occ.Geometry() as geom:
         jacket_base = geom.add_polygon(circ_points(r*4,int(2*res))) # from microscope image
-
         center_offset = r*np.sqrt(3)/3
         centers = [[center_offset,0],[-center_offset/2,center_offset*np.sqrt(3)/2],[-center_offset/2,-center_offset*np.sqrt(3)/2]]
         clad0 = geom.add_polygon(circ_points(r,res,center=centers[0]))
@@ -254,6 +192,8 @@ def lantern_mesh_3PL(r,res):
         return mesh
 
 def lantern_mesh_6PL(r,res):
+    """ generates a mesh for a 6-port lantern with a circular cladding. 
+        tapered-down single-mode cores are also included. """
     with pygmsh.occ.Geometry() as geom:
         jacket_base = geom.add_polygon(circ_points(r*4,int(2*res))) 
         rcore = r*9.2/255
@@ -284,14 +224,3 @@ def lantern_mesh_6PL(r,res):
         algo = 6
         mesh = geom.generate_mesh(dim=2,order=2,algorithm=algo)
         return mesh        
-
-if __name__ == "__main__":
-    #cores = [(0,0)] + circ_points(0.25,5)
-    #m = lantern_mesh_3PL(1,16) #lantern_mesh_displaced_circles(1,0.5,cores,0.5/8,40,ds=0.05)
-    #m = remove_face_points(m)
-    #m = construct_mesh2(2,0.5,30)
-
-    #IOR_dict = {"jacket":2.5,"cladding":2,"core0":1,"core1":1,"core2":1,"core3":1,"core4":1.4,"core5":1.5,"core6":1.6}
-    IOR_dict = {"jacket":1.444-4e-3,"cladding":1.444,"core":1.4504 }
-    m = lantern_mesh_6PL(6,16)
-    plot_mesh(m,IOR_dict,verts=3)

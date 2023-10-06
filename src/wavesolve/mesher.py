@@ -237,7 +237,7 @@ def lantern_mesh_displaced_circles(r_jack,r_clad,pos_core,r_core,res,ds=0.1):
 def lantern_mesh_3PL(r,res):
 
     with pygmsh.occ.Geometry() as geom:
-        jacket_base = geom.add_polygon(circ_points(r*8,int(2*res))) # from microscope image
+        jacket_base = geom.add_polygon(circ_points(r*4,int(2*res))) # from microscope image
 
         center_offset = r*np.sqrt(3)/3
         centers = [[center_offset,0],[-center_offset/2,center_offset*np.sqrt(3)/2],[-center_offset/2,-center_offset*np.sqrt(3)/2]]

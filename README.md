@@ -5,7 +5,7 @@ It uses the finite-element method, and generates waveguide meshes through the `p
 ## installation
 Use pip: `pip install git+https://github.com/jw-lin/wavesolve.git`
 
-Python dependencies: `numpy`,`scipy`,`matplotlib`,`numexpr`,`pygmsh`. \
+Python dependencies: `numpy`,`scipy`,`matplotlib`,`numexpr`,`pygmsh`,`jupyter` \
 Other dependencies: <a href="https://gmsh.info/">`Gmsh`</a> (required for `pygmsh`).
 
 ## documentation

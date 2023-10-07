@@ -9,7 +9,7 @@ Python dependencies: `numpy`,`scipy`,`matplotlib`,`numexpr`,`pygmsh`. \
 Other dependencies: <a href="https://gmsh.info/">`Gmsh`</a> (required for `pygmsh`).
 
 ## documentation
-Admittedly a little sparse right now (but this will change in the future!). See `getting-started.ipynb` for an overview and some working examples.
+Admittedly a little sparse right now (but this will change in the future!). See <a href="getting-started.ipynb">`getting-started.ipynb`</a> for an overview and some working examples.
 
 
 

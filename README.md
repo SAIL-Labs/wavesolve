@@ -4,6 +4,7 @@ It uses the finite element method, and generates waveguide meshes through the `p
 
 ## installation
 Use pip: 
+
 ```
 pip install git+https://github.com/jw-lin/wavesolve.git
 ```

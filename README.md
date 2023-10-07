@@ -6,7 +6,7 @@ It uses the finite-element method, and generates waveguide meshes through the `p
 Use pip: `pip install git+https://github.com/jw-lin/wavesolve.git`
 
 Python dependencies: `numpy`,`scipy`,`matplotlib`,`numexpr`,`pygmsh`. \
-Other dependencies: `Gmsh` (required for `pygmsh`).
+Other dependencies: <a href="https://gmsh.info/">`Gmsh`</a> (required for `pygmsh`).
 
 ## documentation
 Admittedly a little sparse right now (but this will change in the future!). See `getting-started.ipynb` for an overview and some working examples.

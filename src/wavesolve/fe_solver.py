@@ -252,3 +252,69 @@ def optimize_for_mode_structure(mesh,IOR_dict,k,target_field,iterations = 1):
     plt.tricontourf(xcs,ycs,IOR,levels=40)
     plt.colorbar()
     plt.show()
+
+def isinside(v, tri, include_vertex = True):
+    ''' checks if the given point is inside the triangle '''
+    v0 = tri[0]
+    v1 = tri[1] - tri[0]
+    v2 = tri[2] - tri[0]
+    det = lambda u,v : u[0]*v[1] - u[1]*v[0]
+    a = (det(v,v2) - det(v0,v2)) / det(v1,v2)
+    b = -(det(v,v1) - det(v0,v1)) / det(v1,v2)
+
+    if include_vertex:
+        if (a>=0 and b>=0 and a+b<=1): 
+            return True
+        else: return False    
+    else:
+        if (a>0 and b>0 and a+b<1): 
+            return True
+        else: return False    
+
+def find_triangle(gridpoint, mesh):
+    ''' 
+    Finds which triangle the point lies in
+
+    Args: 
+    gridpoint: [x,y] cartesian coordinates
+    mesh: mesh
+    
+    Output:
+    triangle_index: the index of the triangle that the [x,y] point lies in.
+                    returns -99 if the point doesn't lie in any triangle.
+    '''
+    points = mesh.points
+    tris = mesh.cells[1].data 
+    for i in range(len(tris)):
+        tri_points = points[tris[i]]
+        if isinside(gridpoint, tri_points[:,:2]) is True:
+            return i
+    return -99
+
+def interpolate_field(gridpoint, index, v, mesh):
+    '''
+    Finds the field at [x,y] by interpolating the solution found on the triangular mesh
+
+    Args:
+    gridpoint: [x,y] cartesian coordinates
+    index: the index of the triangle that the point lies in (found from find_triangle function)
+    v: the field (solution) to interpolate
+    mesh: mesh
+
+    Output:
+    interpolated: the interpolated field on the [x, y] point
+    '''
+    from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine    
+
+    if index == -99: return 0
+    points = mesh.points
+    tris = mesh.cells[1].data
+    field_points = v[tris[index]]
+
+    vertices = points[tris[index]][:,:2]
+    uvcoord = affine_transform(vertices)(gridpoint)
+    interpolated = 0
+    for ii in range(6):
+        interpolated += get_basis_funcs_affine()[ii](uvcoord[0], uvcoord[1]) * field_points[ii]
+
+    return interpolated    

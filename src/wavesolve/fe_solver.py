@@ -289,7 +289,7 @@ def find_triangle(gridpoint, mesh):
         tri_points = points[tris[i]]
         if isinside(gridpoint, tri_points[:,:2]) is True:
             return i
-    return -99
+    return None
 
 def interpolate_field(gridpoint, index, v, mesh):
     '''
@@ -306,12 +306,12 @@ def interpolate_field(gridpoint, index, v, mesh):
     '''
     from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine    
 
-    if index == -99: return 0
+    if index == None: return np.nan
     points = mesh.points
     tris = mesh.cells[1].data
-    field_points = v[tris[index]]
+    field_points = v[tris[int(index)]]
 
-    vertices = points[tris[index]][:,:2]
+    vertices = points[tris[int(index)]][:,:2]
     uvcoord = affine_transform(vertices)(gridpoint)
     interpolated = 0
     for ii in range(6):

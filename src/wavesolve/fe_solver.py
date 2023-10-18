@@ -306,7 +306,7 @@ def interpolate_field(gridpoint, index, v, mesh):
     '''
     from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine    
 
-    if index == None: return np.nan
+    if index*0 != 0: return np.nan
     points = mesh.points
     tris = mesh.cells[1].data
     field_points = v[tris[int(index)]]

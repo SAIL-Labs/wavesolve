@@ -4,6 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh
 from scipy.sparse.linalg import eigsh
+from scipy.sparse import csr_array
+from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine    
 
 def construct_AB(mesh,IOR_dict,k,poke_index = None):
     """ construct the A and B matrices corresponding to the given waveguide geometry.
@@ -165,6 +167,62 @@ def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
 
     return w[::-1],v.T[::-1],mode_count
 
+def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=False,Nmax=10):
+    """ given a mesh, propagation wavelength, and refractive index dictionary, solve for modes. this has the same functionality
+        as running construct_AB() and solve() 
+    
+    ARGS: 
+        mesh: mesh object corresponding to waveguide geometry
+        wl: wavelength, defined in the same units as mesh point positions
+        IOR_dict: a dictionary assigning different named regions of the mesh different refractive index values
+        plot: set True to view eigenmodes
+        ignore_warning: bypass the warning raised when the mesh becomes too large to solve safely with scipy.linalg.eigh()
+        sparse: set True to use a sparse solver, which is can handle larger meshes but is slower
+        Nmax: the maximum number of modes for the code to look for in sparse mode (guaranteed to have the highest effective indices/eigenvalues).
+    RETURNS:
+        w: array of eigenvalues, descending order
+        v: array of corresponding eigenvectors (waveguide modes)
+        N: number non-spurious (i.e. propagating) waveguide modes
+    """
+    
+    k = 2*np.pi/wl
+    A,B = construct_AB(mesh,IOR_dict,k)
+
+    if A.shape[0]>2000 and not ignore_warning and not sparse:
+        raise Exception("A and B matrices are larger than 2000 x 2000 - this may make your system unstable. consider setting sparse=True")
+    if not sparse:
+        w,v = eigh(A,B)
+    else:
+        _A = csr_array(A)
+        _B = csr_array(B)
+        w,v = eigsh(_A,M=_B,k=Nmax,which="LA")
+
+    IORs = [ior[1] for ior in IOR_dict.items()]
+    nmin,nmax = min(IORs) , max(IORs)
+    mode_count = 0
+    
+    for _w,_v in zip(w[::-1],v.T[::-1]):
+        if _w<0:
+            continue
+        ne = np.sqrt(_w/k**2)
+        if plot:
+            if not (nmin <= ne <= nmax):
+                print("warning: spurious mode! ")
+            
+            print("effective index: ",get_eff_index(wl,_w))
+            plot_eigenvector(mesh,_v)
+        if (nmin <= ne <= nmax):
+            mode_count+=1
+        else:
+            break
+
+    return w[::-1],v.T[::-1],mode_count
+
+def get_eff_index(wl,w):
+    """ get effective index from wavelength wl and eigenvlaue w """
+    k = 2*np.pi/wl
+    return np.sqrt(w/k**2)
+
 def plot_eigenvector(mesh,v,plot_mesh = False,plot_circle=False):
     points = mesh.points
     fig,ax = plt.subplots(figsize=(5,5))
@@ -253,12 +311,15 @@ def optimize_for_mode_structure(mesh,IOR_dict,k,target_field,iterations = 1):
     plt.colorbar()
     plt.show()
 
+def det(u,v):
+    return u[0]*v[1] - u[1]*v[0]
+
 def isinside(v, tri, include_vertex = True):
     ''' checks if the given point is inside the triangle '''
     v0 = tri[0]
     v1 = tri[1] - tri[0]
     v2 = tri[2] - tri[0]
-    det = lambda u,v : u[0]*v[1] - u[1]*v[0]
+
     a = (det(v,v2) - det(v0,v2)) / det(v1,v2)
     b = -(det(v,v1) - det(v0,v1)) / det(v1,v2)
 
@@ -287,11 +348,11 @@ def find_triangle(gridpoint, mesh):
     tris = mesh.cells[1].data 
     for i in range(len(tris)):
         tri_points = points[tris[i]]
-        if isinside(gridpoint, tri_points[:,:2]) is True:
+        if isinside(gridpoint, tri_points[:,:2]):
             return i
     return None
 
-def interpolate_field(gridpoint, index, v, mesh):
+def interpolate_field(gridpoint, index, v, mesh,interp_weights=None):
     '''
     Finds the field at [x,y] by interpolating the solution found on the triangular mesh
 
@@ -304,7 +365,6 @@ def interpolate_field(gridpoint, index, v, mesh):
     Output:
     interpolated: the interpolated field on the [x, y] point
     '''
-    from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine    
 
     if index*0 != 0: return np.nan
     points = mesh.points
@@ -317,4 +377,50 @@ def interpolate_field(gridpoint, index, v, mesh):
     for ii in range(6):
         interpolated += get_basis_funcs_affine()[ii](uvcoord[0], uvcoord[1]) * field_points[ii]
 
-    return interpolated    
+    return interpolated 
+
+def get_tri_idxs(mesh,xa,ya):
+    tri_idxs = np.zeros((len(xa), len(ya)),dtype=int)
+    for i in range(len(xa)):
+        for j in range(len(ya)):
+            idx = find_triangle([xa[i],ya[j]], mesh) 
+            tri_idxs[i][j] = idx if idx is not None else -1
+    return tri_idxs
+
+def get_interp_weights(mesh,xa,ya,tri_idxs):
+    weights = np.zeros((len(xa),len(ya),6))
+    points = mesh.points
+    tris = mesh.cells[1].data
+
+    for i in range(len(xa)):
+        for j in range(len(ya)):
+            for k in range(6):
+                if tri_idxs[i,j]==-1:
+                    weights[i,j,k] = np.nan
+                    continue
+                gridpoint = [xa[i],ya[j]]
+                vertices = points[tris[tri_idxs[i,j]]][:,:2]
+                gridpoint_uv = affine_transform(vertices)(gridpoint)
+                weights[i,j,k] = get_basis_funcs_affine()[k](gridpoint_uv[0], gridpoint_uv[1])
+    return weights
+
+def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None):
+    """ interpolates eigenvector v, computed on mesh, onto rectangular grid defined by 1D arrays xa and ya.
+    ARGS:
+        v: eigenvector to interpolate 
+        mesh: mesh object corresponding to waveguide geometry
+        xa: 1D array of x points for output grid
+        ya: 1D array of y points for output grid
+        tri_idxs: an array of indices. the first index corresponds to the first triangle containing the first mesh point, etc.
+        interp_weights: interpolation weights. these are multiplied against v and summed to get the interpolated field
+    RETURNS:
+        the mode v interpolated over the rectangular grid (xa,ya)
+    """
+
+    tri_idxs = get_tri_idxs(mesh,xa,ya) if tri_idxs is None else tri_idxs
+    interp_weights = get_interp_weights(mesh,xa,ya,tri_idxs) if interp_weights is None else interp_weights
+
+    tris = mesh.cells[1].data
+    field_points = v[tris[tri_idxs]]
+
+    return np.sum(field_points*interp_weights,axis=2)

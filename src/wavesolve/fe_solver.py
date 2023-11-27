@@ -193,7 +193,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
     """
     
     k = 2*np.pi/wl
-    est_eigval = np.power(k*IOR_dict["nclad"],2)
+    est_eigval = np.power(k*IOR_dict["cladding"],2)
 
     A,B = construct_AB(mesh,IOR_dict,k,sparse=sparse)
     N = A.shape[0]

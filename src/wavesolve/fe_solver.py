@@ -7,7 +7,7 @@ from scipy.sparse.linalg import eigsh
 from scipy.sparse import csr_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine    
 
-def construct_AB(mesh,IOR_dict,k,poke_index = None):
+def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
     """ construct the A and B matrices corresponding to the given waveguide geometry.
     Args:
     mesh: the waveguide mesh, produced by wavesolve.mesher or pygmsh
@@ -24,8 +24,12 @@ def construct_AB(mesh,IOR_dict,k,poke_index = None):
 
     N = len(points)
 
-    A = np.zeros((N,N))
-    B = np.zeros((N,N))
+    if not sparse:
+        A = np.zeros((N,N))
+        B = np.zeros((N,N))
+    else:
+        A = csr_matrix((N,N))
+        B = csr_matrix((N,N))
 
     for material in materials:
         tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
@@ -189,7 +193,9 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
     """
     
     k = 2*np.pi/wl
-    A,B = construct_AB(mesh,IOR_dict,k)
+    est_eigval = np.power(k*IOR_dict["nclad"],2)
+
+    A,B = construct_AB(mesh,IOR_dict,k,sparse=sparse)
     N = A.shape[0]
 
     if A.shape[0]>2000 and not ignore_warning and not sparse:
@@ -197,9 +203,9 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
     if not sparse:
         w,v = eigh(A,B,subset_by_index=[N-Nmax,N-1],overwrite_a=True,overwrite_b=True)
     else:
-        _A = csr_matrix(A)
-        _B = csr_matrix(B)
-        w,v = eigsh(_A,M=_B,k=Nmax,which="LA")
+        #_A = csr_matrix(A)
+        #_B = csr_matrix(B)
+        w,v = eigsh(A,M=B,k=Nmax,which="LA",sigma=est_eigval)
 
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)

@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh
 from scipy.sparse.linalg import eigsh
-from scipy.sparse import csr_array
+from scipy.sparse import csr_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine    
 
 def construct_AB(mesh,IOR_dict,k,poke_index = None):
@@ -194,8 +194,8 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
     if not sparse:
         w,v = eigh(A,B,subset_by_index=[N-Nmax,N-1],overwrite_a=True,overwrite_b=True)
     else:
-        _A = csr_array(A)
-        _B = csr_array(B)
+        _A = csr_matrix(A)
+        _B = csr_matrix(B)
         w,v = eigsh(_A,M=_B,k=Nmax,which="LA")
 
     IORs = [ior[1] for ior in IOR_dict.items()]

@@ -8,12 +8,21 @@ Use pip:
 ```
 pip install git+https://github.com/jw-lin/wavesolve.git
 ```
+To update the package:
+
+```
+pip install --force-reinstall git+https://github.com/jw-lin/wavesolve.git
+```
 
 Python dependencies: `numpy`,`scipy`,`matplotlib`,`numexpr`,`pygmsh`,`jupyter` \
 Other dependencies: <a href="https://gmsh.info/">`Gmsh`</a> (required for `pygmsh`).
 
 ## documentation
 Admittedly a little sparse right now (but this will change in the future!) See <a href="getting-started.ipynb">`getting-started.ipynb`</a> for an overview and some working examples.
+
+## potential future directions
+- Autodifferentiation
+- GPU acceleration (CuPy)
 
 
 

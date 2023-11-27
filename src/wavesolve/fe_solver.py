@@ -114,7 +114,7 @@ def solve(A,B,mesh,k,IOR_dict,plot=False):
         v: list of eigenvectors
         N: number of non-spurious eigenvectors (guided modes) found.
     """
-    w,v = eigh(A,B)
+    w,v = eigh(A,B,overwrite_a=True,overwrite_b=True)
 
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)
@@ -142,7 +142,10 @@ def solve(A,B,mesh,k,IOR_dict,plot=False):
 
 def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
     """An extension of solve() to A and B matrices in CSR format."""
-    w,v = eigsh(A,M=B,k=num_modes,which="LA")
+    
+    est_eigval = np.power(k*IOR_dict["nclad"],2)
+    w,v = eigsh(A,M=B,k=num_modes,which="LA",sigma=est_eigval)
+
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)
     mode_count = 0

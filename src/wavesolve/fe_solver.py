@@ -208,8 +208,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
         ne = np.sqrt(_w/k**2)
         if plot:
             if not (nmin <= ne <= nmax):
-                print("warning: spurious mode! ")
-            
+                print("warning: spurious mode! stopping plotting ... ")
             print("effective index: ",get_eff_index(wl,_w))
             plot_eigenvector(mesh,_v)
         if (nmin <= ne <= nmax):

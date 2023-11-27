@@ -147,7 +147,7 @@ def solve(A,B,mesh,k,IOR_dict,plot=False):
 def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
     """An extension of solve() to A and B matrices in CSR format."""
     
-    est_eigval = np.power(k*IOR_dict["nclad"],2)
+    est_eigval = np.power(k*IOR_dict["cladding"],2)
     w,v = eigsh(A,M=B,k=num_modes,which="LA",sigma=est_eigval)
 
     IORs = [ior[1] for ior in IOR_dict.items()]
@@ -185,7 +185,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
         plot: set True to view eigenmodes
         ignore_warning: bypass the warning raised when the mesh becomes too large to solve safely with scipy.linalg.eigh()
         sparse: set True to use a sparse solver, which is can handle larger meshes but is slower
-        Nmax: the <Nmax> largerst eigenvalue/eigenvector pairs to return
+        Nmax: return only the <Nmax> largest eigenvalue/eigenvector pairs
     RETURNS:
         w: array of eigenvalues, descending order
         v: array of corresponding eigenvectors (waveguide modes)

@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh
 from scipy.sparse.linalg import eigsh
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix,lil_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine    
 
 def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
@@ -28,8 +28,8 @@ def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
         A = np.zeros((N,N))
         B = np.zeros((N,N))
     else:
-        A = csr_matrix((N,N))
-        B = csr_matrix((N,N))
+        A = lil_matrix((N,N))
+        B = lil_matrix((N,N))
 
     for material in materials:
         tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
@@ -203,9 +203,9 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
     if not sparse:
         w,v = eigh(A,B,subset_by_index=[N-Nmax,N-1],overwrite_a=True,overwrite_b=True)
     else:
-        #_A = csr_matrix(A)
-        #_B = csr_matrix(B)
-        w,v = eigsh(A,M=B,k=Nmax,which="LA",sigma=est_eigval)
+        _A = A.tocsr()
+        _B = B.tocsr()
+        w,v = eigsh(_A,M=_B,k=Nmax,which="SA",sigma=est_eigval)
 
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)

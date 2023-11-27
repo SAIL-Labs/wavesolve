@@ -178,7 +178,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
         plot: set True to view eigenmodes
         ignore_warning: bypass the warning raised when the mesh becomes too large to solve safely with scipy.linalg.eigh()
         sparse: set True to use a sparse solver, which is can handle larger meshes but is slower
-        Nmax: the maximum number of modes for the code to look for in sparse mode (guaranteed to have the highest effective indices/eigenvalues).
+        Nmax: the <Nmax> largerst eigenvalue/eigenvector pairs to return
     RETURNS:
         w: array of eigenvalues, descending order
         v: array of corresponding eigenvectors (waveguide modes)
@@ -187,11 +187,12 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
     
     k = 2*np.pi/wl
     A,B = construct_AB(mesh,IOR_dict,k)
+    N = A.shape[0]
 
     if A.shape[0]>2000 and not ignore_warning and not sparse:
         raise Exception("A and B matrices are larger than 2000 x 2000 - this may make your system unstable. consider setting sparse=True")
     if not sparse:
-        w,v = eigh(A,B)
+        w,v = eigh(A,B,subset_by_index=[N-Nmax,N-1],overwrite_a=True,overwrite_b=True)
     else:
         _A = csr_array(A)
         _B = csr_array(B)

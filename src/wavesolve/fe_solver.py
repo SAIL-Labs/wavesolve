@@ -242,9 +242,9 @@ def plot_eigenvector(mesh,v,show_mesh = False,ax=None,show=False):
     points = mesh.points
     if ax is None:
         fig,ax = plt.subplots(figsize=(5,5))
-    plt.axis('equal')
-    plt.tricontourf(points[:,0],points[:,1],v,levels=60)
-    plt.colorbar()
+        plt.axis('equal')
+        plt.colorbar()
+    ax.tricontourf(points[:,0],points[:,1],v,levels=60)
     if show_mesh:
         plot_mesh(mesh,show=False,ax=ax)
     if show:

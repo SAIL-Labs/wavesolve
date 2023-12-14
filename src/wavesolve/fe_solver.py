@@ -6,6 +6,7 @@ from scipy.linalg import eigh
 from scipy.sparse.linalg import eigsh
 from scipy.sparse import csr_matrix,lil_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine    
+from wavesolve.mesher import plot_mesh
 
 def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
     """ construct the A and B matrices corresponding to the given waveguide geometry.
@@ -237,18 +238,17 @@ def get_eff_index(wl,w):
     k = 2*np.pi/wl
     return np.sqrt(w/k**2)
 
-def plot_eigenvector(mesh,v,plot_mesh = False,plot_circle=False):
+def plot_eigenvector(mesh,v,show_mesh = False,ax=None,show=False):
     points = mesh.points
-    fig,ax = plt.subplots(figsize=(5,5))
+    if ax is None:
+        fig,ax = plt.subplots(figsize=(5,5))
     plt.axis('equal')
     plt.tricontourf(points[:,0],points[:,1],v,levels=60)
     plt.colorbar()
-    if plot_mesh:
+    if show_mesh:
         plot_mesh(mesh,show=False,ax=ax)
-    if plot_circle:
-        circle = plt.Circle((0,0),mesh.cell_data['radius'],ec='white',fc='None',lw=2)
-        ax.add_patch(circle)
-    plt.show()
+    if show:
+        plt.show()
 
 def compute_diff(tri_idx,mesh,_pinv):
     from wavesolve.shape_funcs import compute_NN

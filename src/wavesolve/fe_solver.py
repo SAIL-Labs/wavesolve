@@ -144,11 +144,15 @@ def solve(A,B,mesh,k,IOR_dict,plot=False):
 
     return w[::-1],v.T[::-1],mode_count
 
-def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
+def solve_sparse(A,B,mesh,wl,IOR_dict,plot=False,num_modes=6):
     """An extension of solve() to A and B matrices in CSR format."""
     
-    est_eigval = np.power(k*IOR_dict["cladding"],2)
-    w,v = eigsh(A,M=B,k=num_modes,which="LA",sigma=est_eigval)
+    k = 2*np.pi/wl
+    est_eigval = np.power(k*max(IOR_dict.values()),2)
+
+    _A = A.tocsr()
+    _B = B.tocsr()
+    w,v = eigsh(_A,M=_B,k=num_modes,which="SA",sigma=est_eigval)
 
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)
@@ -157,12 +161,12 @@ def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
     for _w,_v in zip(w[::-1],v.T[::-1]):
         if _w<0:
             continue
-        ne = np.sqrt(_w/k**2)
+        ne = get_eff_index(wl,_w)
         if plot:
             if not (nmin <= ne <= nmax):
                 print("warning: spurious mode! ")
             
-            print("effective index: ",np.sqrt(_w/k**2))
+            print("effective index: ",ne)
             plot_eigenvector(mesh,_v)
         if (nmin <= ne <= nmax):
             mode_count+=1

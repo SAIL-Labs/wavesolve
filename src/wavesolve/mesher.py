@@ -174,14 +174,19 @@ def lantern_mesh_displaced_circles(r_jack,r_clad,pos_core,r_core,res,ds=0.1):
 
 def lantern_mesh_3PL(r,res):
     """ generates a mesh for a 3-port lantern with a non-circular cladding. 
-        similar to the 3-port PL on SCExAO. """
+        similar to the 3-port PL on SCExAO. (residual SM cores not modelled).
+    ARGS:
+        r : 'inscribed' radius of cladding-jacket boundary at FMF end
+        res : how many edge segments in the cladding-jacket boundary 
+    """
     with pygmsh.occ.Geometry() as geom:
-        jacket_base = geom.add_polygon(circ_points(r*4,int(2*res))) # from microscope image
-        center_offset = r*np.sqrt(3)/3
+        r_clad = r*np.sqrt(3)/2
+        jacket_base = geom.add_polygon(circ_points(r*3,int(2*res))) # from microscope image
+        center_offset = r_clad*np.sqrt(3)/3
         centers = [[center_offset,0],[-center_offset/2,center_offset*np.sqrt(3)/2],[-center_offset/2,-center_offset*np.sqrt(3)/2]]
-        clad0 = geom.add_polygon(circ_points(r,res,center=centers[0]))
-        clad1 = geom.add_polygon(circ_points(r,res,center=centers[1]))
-        clad2 = geom.add_polygon(circ_points(r,res,center=centers[2]))
+        clad0 = geom.add_polygon(circ_points(r_clad,res,center=centers[0]))
+        clad1 = geom.add_polygon(circ_points(r_clad,res,center=centers[1]))
+        clad2 = geom.add_polygon(circ_points(r_clad,res,center=centers[2]))
         full_clad = geom.boolean_union([clad0,clad1,clad2])
 
         jacket = geom.boolean_difference(jacket_base,full_clad,delete_other = False)

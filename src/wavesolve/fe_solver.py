@@ -6,7 +6,6 @@ from scipy.linalg import eigh
 from scipy.sparse.linalg import eigsh
 from scipy.sparse import csr_matrix,lil_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine    
-from wavesolve.mesher import plot_mesh
 
 def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
     """ construct the A and B matrices corresponding to the given waveguide geometry.
@@ -145,15 +144,11 @@ def solve(A,B,mesh,k,IOR_dict,plot=False):
 
     return w[::-1],v.T[::-1],mode_count
 
-def solve_sparse(A,B,mesh,wl,IOR_dict,plot=False,num_modes=6):
+def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
     """An extension of solve() to A and B matrices in CSR format."""
     
-    k = 2*np.pi/wl
-    est_eigval = np.power(k*max(IOR_dict.values()),2)
-
-    _A = A.tocsr()
-    _B = B.tocsr()
-    w,v = eigsh(_A,M=_B,k=num_modes,which="SA",sigma=est_eigval)
+    est_eigval = np.power(k*IOR_dict["cladding"],2)
+    w,v = eigsh(A,M=B,k=num_modes,which="LA",sigma=est_eigval)
 
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)
@@ -162,12 +157,12 @@ def solve_sparse(A,B,mesh,wl,IOR_dict,plot=False,num_modes=6):
     for _w,_v in zip(w[::-1],v.T[::-1]):
         if _w<0:
             continue
-        ne = get_eff_index(wl,_w)
+        ne = np.sqrt(_w/k**2)
         if plot:
             if not (nmin <= ne <= nmax):
                 print("warning: spurious mode! ")
             
-            print("effective index: ",ne)
+            print("effective index: ",np.sqrt(_w/k**2))
             plot_eigenvector(mesh,_v)
         if (nmin <= ne <= nmax):
             mode_count+=1
@@ -198,13 +193,12 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
     """
     
     k = 2*np.pi/wl
-    est_eigval = np.power(k*max(IOR_dict.values()),2)
+    est_eigval = np.power(k*IOR_dict["cladding"],2)
 
     A,B = construct_AB(mesh,IOR_dict,k,sparse=sparse)
     N = A.shape[0]
 
     if A.shape[0]>2000 and not ignore_warning and not sparse:
-        print("current matrix shape: ",A.shape)
         raise Exception("A and B matrices are larger than 2000 x 2000 - this may make your system unstable. consider setting sparse=True")
     if not sparse:
         w,v = eigh(A,B,subset_by_index=[N-Nmax,N-1],overwrite_a=True,overwrite_b=True)
@@ -238,17 +232,18 @@ def get_eff_index(wl,w):
     k = 2*np.pi/wl
     return np.sqrt(w/k**2)
 
-def plot_eigenvector(mesh,v,show_mesh = False,ax=None,show=False):
+def plot_eigenvector(mesh,v,plot_mesh = False,plot_circle=False):
     points = mesh.points
-    if ax is None:
-        fig,ax = plt.subplots(figsize=(5,5))
-        ax.set_aspect('equal')
-    im = ax.tricontourf(points[:,0],points[:,1],v,levels=60)
-    plt.colorbar(im,ax=ax)
-    if show_mesh:
+    fig,ax = plt.subplots(figsize=(5,5))
+    plt.axis('equal')
+    plt.tricontourf(points[:,0],points[:,1],v,levels=60)
+    plt.colorbar()
+    if plot_mesh:
         plot_mesh(mesh,show=False,ax=ax)
-    if show:
-        plt.show()
+    if plot_circle:
+        circle = plt.Circle((0,0),mesh.cell_data['radius'],ec='white',fc='None',lw=2)
+        ax.add_patch(circle)
+    plt.show()
 
 def compute_diff(tri_idx,mesh,_pinv):
     from wavesolve.shape_funcs import compute_NN

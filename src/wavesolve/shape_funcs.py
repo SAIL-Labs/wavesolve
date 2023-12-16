@@ -1,30 +1,36 @@
 import numpy as np
 import numexpr as ne
 
+# shape functions
+N0 = lambda u,v: 2 * (1 - u - v) * (0.5 - u - v)
+N1 = lambda u,v: 2 * u * (u - 0.5)
+N2 = lambda u,v: 2 * v * (v - 0.5)
+N3 = lambda u,v: 4 * u * (1 - u - v)
+N4 = lambda u,v: 4 * u * v
+N5 = lambda u,v: 4 * v * (1 - u - v)
+
+# shape function derivs
+dN0u = lambda u,v: 4*u+4*v-3
+dN0v = lambda u,v: 4*u+4*v-3
+dN1u = lambda u,v: 4*u-1
+dN1v = lambda u,v: 0
+dN2u = lambda u,v: 0
+dN2v = lambda u,v: 4*v-1
+dN3u = lambda u,v: -4*(2*u+v-1)
+dN3v = lambda u,v: -4*u
+dN4u = lambda u,v: 4*v
+dN4v = lambda u,v: 4*u
+dN5u = lambda u,v: -4*v
+dN5v = lambda u,v: -4*(u+2*v-1)
+
+def evaluate_basis_funcs(u,v):
+    return np.array([N0(u,v),N1(u,v),N2(u,v),N3(u,v),N4(u,v),N5(u,v)])
+
 def get_basis_funcs_affine():
     """ returns 6 functions correpsonding to the 6 nodes in a QT element."""
-
-    N0 = lambda u,v: 2 * (1 - u - v) * (0.5 - u - v)
-    N1 = lambda u,v: 2 * u * (u - 0.5)
-    N2 = lambda u,v: 2 * v * (v - 0.5)
-    N3 = lambda u,v: 4 * u * (1 - u - v)
-    N4 = lambda u,v: 4 * u * v
-    N5 = lambda u,v: 4 * v * (1 - u - v)
     return [N0,N1,N2,N3,N4,N5]
 
 def basis_derivs_affine():
-    dN0u = lambda u,v: 4*u+4*v-3
-    dN0v = lambda u,v: 4*u+4*v-3
-    dN1u = lambda u,v: 4*u-1
-    dN1v = lambda u,v: 0
-    dN2u = lambda u,v: 0
-    dN2v = lambda u,v: 4*v-1
-    dN3u = lambda u,v: -4*(2*u+v-1)
-    dN3v = lambda u,v: -4*u
-    dN4u = lambda u,v: 4*v
-    dN4v = lambda u,v: 4*u
-    dN5u = lambda u,v: -4*v
-    dN5v = lambda u,v: -4*(u+2*v-1)
     return [[dN0u,dN0v],[dN1u,dN1v],[dN2u,dN2v],[dN3u,dN3v],[dN4u,dN4v],[dN5u,dN5v]]
 
 def affine_transform(vertices):
@@ -52,6 +58,10 @@ def affine_transform_matrix(vertices):
     _J = x21*y31-x31*y21
     M = np.array([[y31,-x31],[-y21,x21]])/_J
     return M
+
+def apply_affine_transform(vertices,xy):
+    M = affine_transform_matrix(vertices)
+    return np.dot(M,xy-vertices[0])
 
 def compute_NN(tri):
     out = np.zeros((6,6),dtype=np.float64)

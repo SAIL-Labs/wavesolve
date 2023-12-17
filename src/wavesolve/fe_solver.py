@@ -5,7 +5,8 @@ import matplotlib.pyplot as plt
 from scipy.linalg import eigh
 from scipy.sparse.linalg import eigsh
 from scipy.sparse import csr_matrix,lil_matrix
-from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine    
+from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs
+from wavesolve.mesher import construct_meshtree,plot_mesh
 
 def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
     """ construct the A and B matrices corresponding to the given waveguide geometry.
@@ -232,17 +233,14 @@ def get_eff_index(wl,w):
     k = 2*np.pi/wl
     return np.sqrt(w/k**2)
 
-def plot_eigenvector(mesh,v,plot_mesh = False,plot_circle=False):
+def plot_eigenvector(mesh,v,show_mesh = False):
     points = mesh.points
     fig,ax = plt.subplots(figsize=(5,5))
     plt.axis('equal')
     plt.tricontourf(points[:,0],points[:,1],v,levels=60)
     plt.colorbar()
-    if plot_mesh:
+    if show_mesh:
         plot_mesh(mesh,show=False,ax=ax)
-    if plot_circle:
-        circle = plt.Circle((0,0),mesh.cell_data['radius'],ec='white',fc='None',lw=2)
-        ax.add_patch(circle)
     plt.show()
 
 def compute_diff(tri_idx,mesh,_pinv):
@@ -361,7 +359,7 @@ def find_triangle(gridpoint, mesh):
             return i
     return None
 
-def interpolate_field(gridpoint, index, v, mesh,interp_weights=None):
+def interpolate_field(gridpoint, index, v, mesh):
     '''
     Finds the field at [x,y] by interpolating the solution found on the triangular mesh
 
@@ -413,7 +411,7 @@ def get_interp_weights(mesh,xa,ya,tri_idxs):
                 weights[i,j,k] = get_basis_funcs_affine()[k](gridpoint_uv[0], gridpoint_uv[1])
     return weights
 
-def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None):
+def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None):
     """ interpolates eigenvector v, computed on mesh, onto rectangular grid defined by 1D arrays xa and ya.
     ARGS:
         v: eigenvector to interpolate 
@@ -426,10 +424,87 @@ def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None):
         the mode v interpolated over the rectangular grid (xa,ya)
     """
 
-    tri_idxs = get_tri_idxs(mesh,xa,ya) if tri_idxs is None else tri_idxs
+    if meshtree is None:
+        meshtree = construct_meshtree(mesh)
+
+    tri_idxs = get_tri_idxs_KDtree(mesh,meshtree,xa,ya) if tri_idxs is None else tri_idxs
     interp_weights = get_interp_weights(mesh,xa,ya,tri_idxs) if interp_weights is None else interp_weights
 
     tris = mesh.cells[1].data
     field_points = v[tris[tri_idxs]]
 
     return np.sum(field_points*interp_weights,axis=2)
+
+def unstructured_interpolate(v,inmesh,point,inmeshtree=None,max_tries = 10):
+    """ interpolate the field v evaluated on the points of inmesh to compute the value at an arbitrary [x,y] point. 
+        the function is sped up drastically through the use of a KDtree, which must be supplied for the inmeshtree arg.
+        to get a KDtree for a mesh, run mesher.construct_meshtree(mesh).
+
+        this function uses a KDtree to progressively search through triangles in the mesh, ordering the search in terms
+        of how close the interpolation point is to each triangle centroid. after searching through max_tries triangles,
+        the algorithm will assume the point is outside the mesh and return 0.
+    
+    ARGS:
+        v: the mode field you want to resample
+        inmesh: the mesh that v was computed on
+        point: the [x,y] point you want to interpolate to
+        inmeshtree: the KDtree for inmesh. if none, it is auto-computed
+        max_tries: number of searches in KDtree done before we assume that the point is outside the mesh
+    RETURNS: 
+        the interpolated value of v at point. returns nan if outside the mesh (as per max_tries criterion)
+    """
+    tryno = 0
+    if inmeshtree is None:
+        inmeshtree = construct_meshtree(inmesh)
+
+    while tryno < max_tries:
+        tri_idx = inmeshtree.query(point,[tryno+1])[1][0]
+        tri_idxs = inmesh.cells[1].data[tri_idx]
+        tripoints = inmesh.points[tri_idxs,:2]
+        if not isinside(point,tripoints):
+            tryno += 1 
+            continue
+        uv = apply_affine_transform(tripoints,point)
+        Ns = evaluate_basis_funcs(*uv)
+        return np.sum(Ns*v[tri_idxs])
+    return np.nan
+
+def mesh_interpolate(v,inmesh,outmesh,inmeshtree=None,max_tries = 10):
+    """ interpolate the field v, sampled on inmesh.points, to outmesh.points 
+    ARGS:
+        v: the mode field you want to resample
+        inmesh: the mesh that v was computed on
+        outmesh: the mesh that v will be resampled on
+        inmeshtree: the KDtree for inmesh. if none, it is auto-computed
+        max_tries: number of searches in KDtree done before we assume that the point is outside the mesh
+    RETURNS:
+        the resampled field 
+    """
+    
+    if inmeshtree is None:
+        inmeshtree = construct_meshtree(inmesh)
+
+    vout = np.zeros(outmesh.points.shape[0])
+    for i,point in enumerate(outmesh.points):
+        vout[i] = unstructured_interpolate(v,inmesh,point[:2],inmeshtree,max_tries)
+    return vout
+
+def find_triangle_KDtree(point,mesh,meshtree,max_tries=10):
+    tryno = 0
+    while tryno < max_tries:
+        tri_idx = meshtree.query(point,[tryno+1])[1][0]
+        tri_idxs = mesh.cells[1].data[tri_idx]
+        tripoints = mesh.points[tri_idxs,:2]
+        if not isinside(point,tripoints):
+            tryno += 1 
+            continue
+        return tri_idx
+    return None
+
+def get_tri_idxs_KDtree(mesh,meshtree,xa,ya):
+    tri_idxs = np.zeros((len(xa), len(ya)),dtype=int)
+    for i in range(len(xa)):
+        for j in range(len(ya)):
+            idx = find_triangle_KDtree([xa[i],ya[j]],mesh,meshtree) 
+            tri_idxs[i][j] = idx if idx is not None else -1
+    return tri_idxs

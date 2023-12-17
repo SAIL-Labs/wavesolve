@@ -1,6 +1,7 @@
 import pygmsh
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.spatial import KDTree  
 
 def circ_points(radius,res,center=(0,0)):
     """generates a list of points defining a circle
@@ -224,3 +225,10 @@ def lantern_mesh_6PL(r,res):
         algo = 6
         mesh = geom.generate_mesh(dim=2,order=2,algorithm=algo)
         return mesh        
+
+def construct_meshtree(mesh):
+    """ compute a KDtree from mesh triangle centroids """
+
+    tris = mesh.cells[1].data
+    cntrs = np.mean(mesh.points[tris][:,:3,:2],axis=1)
+    return KDTree(cntrs)

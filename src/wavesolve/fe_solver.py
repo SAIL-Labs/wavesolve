@@ -233,15 +233,18 @@ def get_eff_index(wl,w):
     k = 2*np.pi/wl
     return np.sqrt(w/k**2)
 
-def plot_eigenvector(mesh,v,show_mesh = False):
+def plot_eigenvector(mesh,v,show_mesh = False,ax=None,show=True):
     points = mesh.points
-    fig,ax = plt.subplots(figsize=(5,5))
-    plt.axis('equal')
-    plt.tricontourf(points[:,0],points[:,1],v,levels=60)
-    plt.colorbar()
+    if ax is None:
+        fig,ax = plt.subplots(figsize=(5,5))
+    
+    ax.set_aspect('equal')
+    ax.tricontourf(points[:,0],points[:,1],v,levels=60)
+    
     if show_mesh:
         plot_mesh(mesh,show=False,ax=ax)
-    plt.show()
+    if show:
+        plt.show()
 
 def compute_diff(tri_idx,mesh,_pinv):
     from wavesolve.shape_funcs import compute_NN

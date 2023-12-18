@@ -148,8 +148,8 @@ def solve(A,B,mesh,k,IOR_dict,plot=False):
 def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
     """An extension of solve() to A and B matrices in CSR format."""
     
-    est_eigval = np.power(k*IOR_dict["cladding"],2)
-    w,v = eigsh(A,M=B,k=num_modes,which="LA",sigma=est_eigval)
+    est_eigval = np.power(k*max(IOR_dict.values()),2)
+    w,v = eigsh(A,M=B,k=num_modes,which="SA",sigma=est_eigval)
 
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)
@@ -194,7 +194,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
     """
     
     k = 2*np.pi/wl
-    est_eigval = np.power(k*IOR_dict["cladding"],2)
+    est_eigval = np.power(k*max(IOR_dict.values()),2)
 
     A,B = construct_AB(mesh,IOR_dict,k,sparse=sparse)
     N = A.shape[0]

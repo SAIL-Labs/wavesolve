@@ -149,7 +149,7 @@ def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
     """An extension of solve() to A and B matrices in CSR format."""
     
     est_eigval = np.power(k*max(IOR_dict.values()),2)
-    w,v = eigsh(A.to_csr(),M=B.to_csr(),k=num_modes,which="SA",sigma=est_eigval)
+    w,v = eigsh(A.tocsr(),M=B.tocsr(),k=num_modes,which="SA",sigma=est_eigval)
 
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)

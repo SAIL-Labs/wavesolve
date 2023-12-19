@@ -55,10 +55,10 @@ def plot_mesh(mesh,IOR_dict=None,show=True,ax=None,verts=3,alpha=0.2):
             ax.add_patch(t_edge)
 
     for point in points:
-        plt.plot(point[0],point[1],'wo',ms=1,alpha=alpha)
+        ax.plot(point[0],point[1],'wo',ms=1,alpha=alpha)
 
-    plt.xlim(np.min(points[:,0]),np.max(points[:,0]) )
-    plt.ylim(np.min(points[:,1]),np.max(points[:,1]) )
+    ax.set_xlim(np.min(points[:,0]),np.max(points[:,0]) )
+    ax.set_ylim(np.min(points[:,1]),np.max(points[:,1]) )
     if show:
         plt.show()
 

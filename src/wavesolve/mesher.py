@@ -37,7 +37,7 @@ def plot_mesh(mesh,IOR_dict=None,show=True,ax=None,verts=3,alpha=0.2):
         IORs = [ior[1] for ior in IOR_dict.items()]
         n,n0 = max(IORs) , min(IORs)
 
-    if show and ax is None:
+    if ax is None:
         fig,ax = plt.subplots(figsize=(5,5))
 
     for material in materials:

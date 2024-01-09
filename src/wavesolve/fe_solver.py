@@ -53,7 +53,7 @@ def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
 
     return A,B
 
-def construct_B(mesh,k,sparse=False):
+def construct_B(mesh,sparse=False):
     """ construct only the B matrix ("mass matrix") corresponding to the given waveguide geometry. this is used for inner products.
     Args:
     mesh: the waveguide mesh, produced by wavesolve.mesher or pygmsh
@@ -64,7 +64,6 @@ def construct_B(mesh,k,sparse=False):
     """
     
     points = mesh.points
-    materials = mesh.cell_sets.keys()
 
     N = len(points)
 
@@ -73,13 +72,11 @@ def construct_B(mesh,k,sparse=False):
     else:
         B = lil_matrix((N,N))
 
-    for material in materials:
-        tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
-        for tri in tris:
-            tri_points = points[tri]
-            NN = compute_NN(tri_points)
-            ix = np.ix_(tri,tri)
-            B[ix] += NN
+    for tri in mesh.cells[1].data:
+        tri_points = points[tri]
+        NN = compute_NN(tri_points)
+        ix = np.ix_(tri,tri)
+        B[ix] += NN
 
     return B
 

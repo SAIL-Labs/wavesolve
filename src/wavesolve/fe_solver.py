@@ -266,12 +266,13 @@ def plot_eigenvector(mesh,v,show_mesh = False,ax=None,show=True):
         fig,ax = plt.subplots(figsize=(5,5))
     
     ax.set_aspect('equal')
-    ax.tricontourf(points[:,0],points[:,1],v,levels=60)
+    im = ax.tricontourf(points[:,0],points[:,1],v,levels=60)
     
     if show_mesh:
         plot_mesh(mesh,show=False,ax=ax)
     if show:
         plt.show()
+    return im
 
 def compute_diff(tri_idx,mesh,_pinv):
     from wavesolve.shape_funcs import compute_NN

@@ -7,6 +7,7 @@ from scipy.sparse.linalg import eigsh
 from scipy.sparse import csr_matrix,lil_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs
 from wavesolve.mesher import construct_meshtree,plot_mesh
+from wavesolve.shape_funcs import compute_dNdN, compute_NN
 
 def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
     """ construct the A and B matrices corresponding to the given waveguide geometry.
@@ -18,7 +19,6 @@ def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
     Returns:
     A,B: matrices
     """
-    from wavesolve.shape_funcs import compute_dNdN, compute_NN
     
     points = mesh.points
     materials = mesh.cell_sets.keys()
@@ -52,6 +52,36 @@ def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
                 A[ix] += 0.1 * NN
 
     return A,B
+
+def construct_B(mesh,k,sparse=False):
+    """ construct only the B matrix ("mass matrix") corresponding to the given waveguide geometry. this is used for inner products.
+    Args:
+    mesh: the waveguide mesh, produced by wavesolve.mesher or pygmsh
+    k: free-space wavenumber of propagation
+
+    Returns:
+    B: matrix
+    """
+    
+    points = mesh.points
+    materials = mesh.cell_sets.keys()
+
+    N = len(points)
+
+    if not sparse:
+        B = np.zeros((N,N))
+    else:
+        B = lil_matrix((N,N))
+
+    for material in materials:
+        tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
+        for tri in tris:
+            tri_points = points[tri]
+            NN = compute_NN(tri_points)
+            ix = np.ix_(tri,tri)
+            B[ix] += NN
+
+    return B
 
 def construct_AB_expl_IOR(mesh,IOR_arr,k):
     from wavesolve.shape_funcs import compute_dNdN, compute_NN

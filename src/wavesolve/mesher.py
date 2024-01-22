@@ -36,6 +36,11 @@ def plot_mesh(mesh,IOR_dict=None,show=True,ax=None,verts=3,alpha=0.2):
     if IOR_dict is not None:
         IORs = [ior[1] for ior in IOR_dict.items()]
         n,n0 = max(IORs) , min(IORs)
+        _linecol = 'white'
+        _ptstyle = 'wo'
+    else:
+        _linecol = 'k'
+        _ptstyle = 'ko'
 
     if ax is None:
         fig,ax = plt.subplots(figsize=(5,5))
@@ -50,12 +55,12 @@ def plot_mesh(mesh,IOR_dict=None,show=True,ax=None,verts=3,alpha=0.2):
         _els = els[tuple(mesh.cell_sets[material])][0,:,0,:]
         for i,_el in enumerate(_els):
             t=plt.Polygon(points[_el[:verts]][:,:2], facecolor=color)
-            t_edge=plt.Polygon(points[_el[:verts]][:,:2], lw=0.5,color='white',alpha=alpha,fill=False)
+            t_edge=plt.Polygon(points[_el[:verts]][:,:2], lw=0.5,color=_linecol,alpha=alpha,fill=False)
             ax.add_patch(t)
             ax.add_patch(t_edge)
 
     for point in points:
-        ax.plot(point[0],point[1],'wo',ms=1,alpha=alpha)
+        ax.plot(point[0],point[1],_ptstyle,ms=1,alpha=alpha)
 
     ax.set_xlim(np.min(points[:,0]),np.max(points[:,0]) )
     ax.set_ylim(np.min(points[:,1]),np.max(points[:,1]) )

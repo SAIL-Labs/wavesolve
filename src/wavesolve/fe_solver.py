@@ -3,7 +3,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh
-from scipy.sparse.linalg import eigsh
+from scipy.sparse.linalg import eigsh,lobpcg
 from scipy.sparse import csr_matrix,lil_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs
 from wavesolve.mesher import construct_meshtree,plot_mesh
@@ -492,10 +492,31 @@ def mesh_interpolate(v,inmesh,outmesh,inmeshtree=None,max_tries = 10):
         vout[i] = unstructured_interpolate(v,inmesh,point[:2],inmeshtree,max_tries)
     return vout
 
+def get_mesh_interpolate_matrices(inmesh,outmesh,inmeshtree,boundary_val=0):
+    """get the index and weight matrices that interpolate between inmesh and outmesh"""
+    weight_matrix = np.empty((outmesh.points.shape[0],6))
+    idx_matrix = np.zeros((outmesh.points.shape[0]),dtype=int)
+    for i,point in enumerate(outmesh.points):
+        idx = find_triangle_KDtree(point,inmesh,inmeshtree,max_tries=-1)
+        tridx = inmesh.cells[1].data[idx]
+        if idx is not None:
+            tripts = inmesh.points[tridx,:2]
+            uv = affine_transform(tripts)(point)
+            Ns = evaluate_basis_funcs(*uv)
+            idx_matrix[i] = tridx
+            weight_matrix[i,:] = Ns
+        else:
+            weight_matrix[i,:] = boundary_val
+    
+    return idx_matrix,weight_matrix
+        
+
 def find_triangle_KDtree(point,mesh,meshtree,max_tries=10):
     tryno = 0
+    if max_tries == -1:
+        max_tries = mesh.points.shape[0]-1
     while tryno < max_tries:
-        tri_idx = meshtree.query(point,[tryno+1])[1][0]
+        tri_idx = meshtree.query(point,[tryno+1])[1][0] # i know this is inefficient ...
         tri_idxs = mesh.cells[1].data[tri_idx]
         tripoints = mesh.points[tri_idxs,:2]
         if not isinside(point,tripoints):

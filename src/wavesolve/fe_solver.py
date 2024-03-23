@@ -577,7 +577,7 @@ def construct_Avec(mesh,IOR_dict,k,sparse=False):
         A = lil_matrix((N,N))
 
     # Avec only has nonzero transverse-transverse (tt) block
-    for edge in edges:
+    for i,edge in enumerate(edges):
         edgepoints = mesh.points[edge]
 
     for material in materials:

@@ -1,3 +1,4 @@
 .gitattributes
 *.json
 __pycache__/*
+testing/*

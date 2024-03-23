@@ -248,80 +248,91 @@ LNe0 = lambda u,v: (1-v,u) #(LN0(u,v)*dLN1du - LN1(u,v)*dLN0du , LN0(u,v)*dLN1dv
 LNe1 = lambda u,v: (-np.sqrt(2)*v,np.sqrt(2)*u) #((LN1(u,v)*dLN2du - LN2(u,v)*dLN1du)*np.sqrt(2) , (LN1(u,v)*dLN2dv - LN2(u,v)*dLN1dv)*np.sqrt(2)) # sqrt(2) * (-v,u)
 LNe2 = lambda u,v: (-v,-1+u)# (LN2(u,v)*dLN0du - LN0(u,v)*dLN2du , LN2(u,v)*dLN0dv - LN0(u,v)*dLN2dv)
 
-curlLNe0 = 2
-curlLNe1 = 2*np.sqrt(2)
-curlLNe2 = 2
+def precompute(tri):
+    x21 = tri[1,0] - tri[0,0]
+    y21 = tri[1,1] - tri[0,1]
+    x31 = tri[2,0] - tri[0,0]
+    y31 = tri[2,1] - tri[0,1]
+    x32 = tri[2,0] - tri[1,0]
+    y32 = tri[2,1] - tri[1,1]
 
-def computeL_Ne_Ne(tri): # nenenene
+    l12 = np.sqrt(x21*x21+y21*y21)
+    l23 = np.sqrt(x32*x32+y32*y32)
+    l31 = np.sqrt(x31*x31+y31*y31)
+    _J = x21*y31 - x31*y21
+
+    return (x21,y21,x31,y31,x31,y31,l12,l23,l31,_J)
+
+## the below was computed through sympy ##
+
+def computeL_Ne_Ne(tri,precomp=None): # nenenene
     """ integral of LNe_i LNe_j over triangle tri """
     out = np.zeros((3,3),dtype=np.float64)
-    x10 = tri[1,0] - tri[0,0]
-    y10 = tri[1,1] - tri[0,1]
-    x20 = tri[2,0] - tri[0,0]
-    y20 = tri[2,1] - tri[0,1]
-    _J = x10*y20 - x20*y10
+
+    if precomp is None:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri)
+    else:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
     
-    # edge order is 01 , 12, 20 
-    out[0,0] = out[1,1] = out[2,2] = 1/3
-    out[0,1] = out[1,0] = out[1,2] = out[2,1] = 0
-    out[0,2] = out[2,0] = -1/6
-    return out*_J
+    # edge order is 12 , 23, 31 
+    out[0,0] = l12**2 * (l12**2-3*x21*x31+3*l31**2-3*y21*y31)/(12*_J)
+    out[1,1] = l23**2 * (l12**2 + x21*x31 + l31**2 + y21*y31)/(12*_J)
+    out[2,2] = l31**2 * (3*l12**2-3*x21*x31+l31**2-3*y21*y31)/(12*_J)
+    out[0,1] = out[1,0] = l12*l23 * (l12**2-x21*x31-l31**2-y21*y31)/(12*_J)
+    out[1,2] = out[2,1] = l23*l31 * (-l12**2-x21*x31+l31**2-y21*y31)/(12*_J)
+    out[2,0] = out[0,2] = l31*l12 * (-l12**2+3*x21*x31-l31**2+3*y21*y31)/(12*_J)
+    return out
 
-def computeL_Ne_dN(tri):
-    """ integral of LNe_i and LN_j """
+def computeL_curlNe_curlNe(tri,precomp=None):
+    if precomp is None:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri)
+    else:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
+    ls = np.array([l12,l23,l31])
+    return 2/_J * ls[:,None]*ls[None,:]
+
+def computeL_Ne_dN(tri,precomp=None):
+    """ integral of Ne_i and dN_j """
     out = np.zeros((3,3),dtype=np.float64)
-    x10 = tri[1,0] - tri[0,0]
-    y10 = tri[1,1] - tri[0,1]
-    x20 = tri[2,0] - tri[0,0]
-    y20 = tri[2,1] - tri[0,1]
-    _J = x10*y20 - x20*y10
-    out[0,0] = -1/2
-    out[1,1] = -np.sqrt(2)/6
-    out[2,2] = -1/3
-    out[0,1] = 1/3
-    out[1,0] = 0
-    out[0,2] = 1/6
-    out[2,0] = 1/2
-    out[1,2] = np.sqrt(2)/6
-    out[2,1] = -1/6
-    return out*_J
+    if precomp is None:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri)
+    else:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
 
-def computeL_NN(tri):
+    out[0,0] = l12*(-l12**2 + 3*x21*x31-2*l31**2+3*y21*y31)/(6*_J)
+    out[1,1] = l23*(-x21*x31-l31**2-y21*y31)/(6*_J)
+    out[2,2] = l31*(-2*l12**2+x21*x31+y21*y31)/(6*_J)
+    out[0,1] = l12*(-x21*x31+2*l31**2-y21*y31)/(6*_J)
+    out[1,0] = l23*(-l12**2+l31**2)/(6*_J)
+    out[1,2] = l23*(l12**2+x21*x31+y21*y31)/(6*_J)
+    out[2,1] = l31*(2*x21*x31+2*y21*y31-l31**2)/(6*_J)
+    out[2,0] = l31*(2*l12**2-3*x21*x31+l31**2-3*y21*y31)/(6*_J)
+    out[0,2] = l12*(l12**2-2*x21*x31-2*y21*y31)/(6*_J)
+    return out
+
+def computeL_NN(tri,precomp=None):
     out = np.zeros((3,3),dtype=np.float64)
-    x10 = tri[1,0] - tri[0,0]
-    y10 = tri[1,1] - tri[0,1]
-    x20 = tri[2,0] - tri[0,0]
-    y20 = tri[2,1] - tri[0,1]
-    _J = x10*y20 - x20*y10
-    out[:] = 1/24
-    out[0,0] = out[1,1] = out[2,2] = 1/12
-    return out*_J
+    if precomp is None:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri)
+    else:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
+    out[:] = _J/24
+    out[0,0] = out[1,1] = out[2,2] = _J/12
+    return out
 
-def computeL_dNdN(tri):
+def computeL_dNdN(tri,precomp=None):
     out = np.zeros((3,3),dtype=np.float64)
-    x10 = tri[1,0] - tri[0,0]
-    y10 = tri[1,1] - tri[0,1]
-    x20 = tri[2,0] - tri[0,0]
-    y20 = tri[2,1] - tri[0,1]
-    _J = x10*y20 - x20*y10
-    out[0,0] = 1
-    out[1,1] = out[2,2] = 1/2
-    out[0,1] = out[1,0] = out[0,2] = out[2,0] = -1/2
-    out[1,2] = out[2,1] = 0
-    return out*_J
+    if precomp is None:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri)
+    else:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
 
-#curlLNe0 = 2
-#urlLNe1 = 2*np.sqrt(2)
-#curlLNe2 = 2
+    out[0,0] = (l12**2+l31**2-2*x21*x31-2*y21*y31)/(2*_J)
+    out[1,1] = l31**2/(2*_J)
+    out[2,2] = l12**2/(2*_J)
+    out[0,1] = out[1,0] = (-l31**2+x21*x31+y21*y31)/(2*_J)
+    out[1,2] = out[2,1] = (-x21*x31-y21*y31)/(2*_J)
+    out[2,0] = out[0,2] = (-l12**2+x21*x31+y21*y31)/(2*_J)
 
-def computeL_curlNe_curlNe(tri):
-    out = np.zeros((3,3),dtype=np.float64)
-    x10 = tri[1,0] - tri[0,0]
-    y10 = tri[1,1] - tri[0,1]
-    x20 = tri[2,0] - tri[0,0]
-    y20 = tri[2,1] - tri[0,1]
-    _J = x10*y20 - x20*y10
-    out[0,0] = out[2,2] = out[0,2] = out[2,0] = 2
-    out[1,1] = 4
-    out[0,1] = out[1,0] = out[1,2] = out[2,1] = 2*np.sqrt(2)
-    return out*_J
+    return out
+

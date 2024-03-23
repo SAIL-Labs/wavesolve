@@ -6,7 +6,7 @@ from scipy.linalg import eigh
 from scipy.sparse.linalg import eigsh,lobpcg
 from scipy.sparse import csr_matrix,lil_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs
-from wavesolve.mesher import construct_meshtree,plot_mesh
+from wavesolve.mesher import construct_meshtree,plot_mesh,get_unique_edges
 from wavesolve.shape_funcs import compute_dNdN, compute_NN
 
 def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
@@ -560,3 +560,32 @@ def get_tri_idxs_KDtree(mesh,meshtree,xa,ya):
             idx = find_triangle_KDtree([xa[i],ya[j]],mesh,meshtree) 
             tri_idxs[i][j] = idx if idx is not None else -1
     return tri_idxs
+
+def construct_Avec(mesh,IOR_dict,k,sparse=False):
+    points = mesh.points
+    tris = mesh.cells[1].data 
+    materials = mesh.cell_sets.keys()
+    edges = mesh.cells[0].data # for this to work, need to update mesh with get_unique_edges()
+
+    N = len(edges) + len(points)
+    Ntt = len(edges)
+    if not sparse:
+        Att = np.zeros((Ntt,Ntt))
+        A = np.zeros((N,N))
+    else:
+        Att = lil_matrix((Ntt,Ntt))
+        A = lil_matrix((N,N))
+
+    # Avec only has nonzero transverse-transverse (tt) block
+    for edge in edges:
+        edgepoints = mesh.points[edge]
+
+    for material in materials:
+        tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
+        for tri in tris:
+            tri_points = points[tri]
+            NN = compute_NN(tri_points)
+            dNdN = compute_dNdN(tri_points)
+            ix = np.ix_(tri,tri)
+            A[ix] += (k**2*IOR_dict[material]**2) * NN - dNdN
+            B[ix] += NN

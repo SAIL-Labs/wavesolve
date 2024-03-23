@@ -237,3 +237,21 @@ def construct_meshtree(mesh):
     tris = mesh.cells[1].data
     cntrs = np.mean(mesh.points[tris][:,:3,:2],axis=1)
     return KDTree(cntrs)
+
+def get_unique_edges(mesh,mutate=True):
+    """ get set of unique edges in mesh """
+    tris = mesh.cells[1].data
+    
+    unique_edges = set()
+
+    for tri in tris:
+        e0 = tuple(sorted([tri[0],tri[1]]))
+        e1 = tuple(sorted([tri[1],tri[2]]))
+        e2 = tuple(sorted([tri[2],tri[0]]))
+        unique_edges.add(e0)
+        unique_edges.add(e1)
+        unique_edges.add(e2)
+    out = np.array(list(unique_edges))
+    if mutate:
+        mesh.cells[0].data = out
+    return out

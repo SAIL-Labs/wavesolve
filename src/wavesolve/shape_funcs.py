@@ -227,5 +227,89 @@ def compute_J(vertices):
     _J = x21*y31-x31*y21
     return _J   
 
+### vector shape functions - linear triangle elements ###
+### reference: https://ieeexplore.ieee.org/document/5628380
 
+LN0 = lambda u,v: 1 - u - v
+LN1 = lambda u,v: u
+LN2 = lambda u,v: v 
 
+dLN0du = -1
+dLN0dv = -1
+dLN1du = 1
+dLN1dv = 0
+dLN2du = 0
+dLN2dv = 1
+
+# shape functions for edges
+# edge 0 = point 0 -> point 1, etc.
+
+LNe0 = lambda u,v: (1-v,u) #(LN0(u,v)*dLN1du - LN1(u,v)*dLN0du , LN0(u,v)*dLN1dv - LN1(u,v)*dLN0dv)
+LNe1 = lambda u,v: (-np.sqrt(2)*v,np.sqrt(2)*u) #((LN1(u,v)*dLN2du - LN2(u,v)*dLN1du)*np.sqrt(2) , (LN1(u,v)*dLN2dv - LN2(u,v)*dLN1dv)*np.sqrt(2)) # sqrt(2) * (-v,u)
+LNe2 = lambda u,v: (-v,-1+u)# (LN2(u,v)*dLN0du - LN0(u,v)*dLN2du , LN2(u,v)*dLN0dv - LN0(u,v)*dLN2dv)
+
+curlLNe0 = 2
+curlLNe1 = 2*np.sqrt(2)
+curlLNe2 = 2
+
+def computeL_Ne_Ne(tri): # nenenene
+    """ integral of LNe_i LNe_j over triangle tri """
+    out = np.zeros((3,3),dtype=np.float64)
+    x10 = tri[1,0] - tri[0,0]
+    y10 = tri[1,1] - tri[0,1]
+    x20 = tri[2,0] - tri[0,0]
+    y20 = tri[2,1] - tri[0,1]
+    _J = x10*y20 - x20*y10
+    
+    # edge order is 01 , 12, 20 
+    out[0,0] = out[1,1] = out[2,2] = 1/3
+    out[0,1] = out[1,0] = out[1,2] = out[2,1] = 0
+    out[0,2] = out[2,0] = -1/6
+    out *= _J
+    return out
+
+def computeL_Ne_dN(tri):
+    """ integral of LNe_i and LN_j """
+    out = np.zeros((3,3),dtype=np.float64)
+    x10 = tri[1,0] - tri[0,0]
+    y10 = tri[1,1] - tri[0,1]
+    x20 = tri[2,0] - tri[0,0]
+    y20 = tri[2,1] - tri[0,1]
+    _J = x10*y20 - x20*y10
+    out[0,0] = -1/2
+    out[1,1] = -np.sqrt(2)/6
+    out[2,2] = -1/3
+    out[0,1] = 1/3
+    out[1,0] = 0
+    out[0,2] = 1/6
+    out[2,0] = 1/2
+    out[1,2] = np.sqrt(2)/6
+    out[2,1] = -1/6
+    out *= _J
+    return out
+
+def computeL_NN(tri):
+    out = np.zeros((3,3),dtype=np.float64)
+    x10 = tri[1,0] - tri[0,0]
+    y10 = tri[1,1] - tri[0,1]
+    x20 = tri[2,0] - tri[0,0]
+    y20 = tri[2,1] - tri[0,1]
+    _J = x10*y20 - x20*y10
+    out[:] = 1/24
+    out[0,0] = out[1,1] = out[2,2] = 1/12
+    out *= _J
+    return out
+
+def computeL_dNdN(tri):
+    out = np.zeros((3,3),dtype=np.float64)
+    x10 = tri[1,0] - tri[0,0]
+    y10 = tri[1,1] - tri[0,1]
+    x20 = tri[2,0] - tri[0,0]
+    y20 = tri[2,1] - tri[0,1]
+    _J = x10*y20 - x20*y10
+    out[0,0] = 1
+    out[1,1] = out[2,2] = 1/2
+    out[0,1] = out[1,0] = out[0,2] = out[2,0] = -1/2
+    out[1,2] = out[2,1] = 0
+    out *= _J
+    return out

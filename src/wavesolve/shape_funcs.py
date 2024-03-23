@@ -244,9 +244,9 @@ dLN2dv = 1
 # shape functions for edges
 # edge 0 = point 0 -> point 1, etc.
 
-LNe0 = lambda u,v: (1-v,u) #(LN0(u,v)*dLN1du - LN1(u,v)*dLN0du , LN0(u,v)*dLN1dv - LN1(u,v)*dLN0dv)
-LNe1 = lambda u,v: (-np.sqrt(2)*v,np.sqrt(2)*u) #((LN1(u,v)*dLN2du - LN2(u,v)*dLN1du)*np.sqrt(2) , (LN1(u,v)*dLN2dv - LN2(u,v)*dLN1dv)*np.sqrt(2)) # sqrt(2) * (-v,u)
-LNe2 = lambda u,v: (-v,-1+u)# (LN2(u,v)*dLN0du - LN0(u,v)*dLN2du , LN2(u,v)*dLN0dv - LN0(u,v)*dLN2dv)
+LNe0 = lambda u,v: np.array([1-v,u]) #(LN0(u,v)*dLN1du - LN1(u,v)*dLN0du , LN0(u,v)*dLN1dv - LN1(u,v)*dLN0dv)
+LNe1 = lambda u,v: np.array([-np.sqrt(2)*v,np.sqrt(2)*u]) #((LN1(u,v)*dLN2du - LN2(u,v)*dLN1du)*np.sqrt(2) , (LN1(u,v)*dLN2dv - LN2(u,v)*dLN1dv)*np.sqrt(2)) # sqrt(2) * (-v,u)
+LNe2 = lambda u,v: np.array([-v,-1+u]) # (LN2(u,v)*dLN0du - LN0(u,v)*dLN2du , LN2(u,v)*dLN0dv - LN0(u,v)*dLN2dv)
 
 def precompute(tri,tri_idx):
     x21 = tri[1,0] - tri[0,0]

@@ -248,17 +248,19 @@ LNe0 = lambda u,v: (1-v,u) #(LN0(u,v)*dLN1du - LN1(u,v)*dLN0du , LN0(u,v)*dLN1dv
 LNe1 = lambda u,v: (-np.sqrt(2)*v,np.sqrt(2)*u) #((LN1(u,v)*dLN2du - LN2(u,v)*dLN1du)*np.sqrt(2) , (LN1(u,v)*dLN2dv - LN2(u,v)*dLN1dv)*np.sqrt(2)) # sqrt(2) * (-v,u)
 LNe2 = lambda u,v: (-v,-1+u)# (LN2(u,v)*dLN0du - LN0(u,v)*dLN2du , LN2(u,v)*dLN0dv - LN0(u,v)*dLN2dv)
 
-def precompute(tri):
+def precompute(tri,tri_idx):
     x21 = tri[1,0] - tri[0,0]
     y21 = tri[1,1] - tri[0,1]
     x31 = tri[2,0] - tri[0,0]
     y31 = tri[2,1] - tri[0,1]
     x32 = tri[2,0] - tri[1,0]
     y32 = tri[2,1] - tri[1,1]
-
-    l12 = np.sqrt(x21*x21+y21*y21)
-    l23 = np.sqrt(x32*x32+y32*y32)
-    l31 = np.sqrt(x31*x31+y31*y31)
+    s1 = 1 if tri_idx[0]<tri_idx[1] else -1
+    s2 = 1 if tri_idx[1]<tri_idx[2] else -1
+    s3 = 1 if tri_idx[2]<tri_idx[0] else -1
+    l12 = np.sqrt(x21*x21+y21*y21)*s1 
+    l23 = np.sqrt(x32*x32+y32*y32)*s2
+    l31 = np.sqrt(x31*x31+y31*y31)*s3
     _J = x21*y31 - x31*y21
 
     return (x21,y21,x31,y31,x31,y31,l12,l23,l31,_J)

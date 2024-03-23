@@ -271,24 +271,24 @@ def LNe0(p,tri,tri_idx):
     x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
     x1,y1 = tri[0,0],tri[0,1]
     x,y = p[0],p[1]
-    xv = (-y + y31 + y1)/_J
-    yv = (x - x31 - x1)/_J
+    xv = (-y + y31 + y1)/_J*l12
+    yv = (x - x31 - x1)/_J*l12
     return np.array([xv,yv])
 
 def LNe1(p,tri,tri_idx):
     x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
     x1,y1 = tri[0,0],tri[0,1]
     x,y = p[0],p[1]
-    xv = (-y + y1)/_J
-    yv = (x - x1)/_J
+    xv = (-y + y1)/_J*l23
+    yv = (x - x1)/_J*l23
     return np.array([xv,yv])
 
 def LNe2(p,tri,tri_idx):
     x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
     x1,y1 = tri[0,0],tri[0,1]
     x,y = p[0],p[1]
-    xv = (-y + y21 + y1)/_J
-    yv = (x - x21 - x1)/_J
+    xv = (-y + y21 + y1)/_J*l31
+    yv = (x - x21 - x1)/_J*l31
     return np.array([xv,yv])
 
 def computeL_Ne_Ne(tri,precomp=None): # nenenene

@@ -7,7 +7,7 @@ from scipy.sparse.linalg import eigsh,lobpcg
 from scipy.sparse import csr_matrix,lil_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs
 from wavesolve.mesher import construct_meshtree,plot_mesh,get_unique_edges
-from wavesolve.shape_funcs import compute_dNdN, compute_NN
+from wavesolve.shape_funcs import *
 
 def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
     """ construct the A and B matrices corresponding to the given waveguide geometry.
@@ -577,15 +577,16 @@ def construct_Avec(mesh,IOR_dict,k,sparse=False):
         A = lil_matrix((N,N))
 
     # Avec only has nonzero transverse-transverse (tt) block
-    for i,edge in enumerate(edges):
-        edgepoints = mesh.points[edge]
-
     for material in materials:
         tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
-        for tri in tris:
+        edge_indices = mesh.edge_indices[tuple(mesh.cell_sets[material])][0,:,0,:]
+        for tri,idx in zip(tris,edge_indices):
             tri_points = points[tri]
-            NN = compute_NN(tri_points)
-            dNdN = compute_dNdN(tri_points)
-            ix = np.ix_(tri,tri)
-            A[ix] += (k**2*IOR_dict[material]**2) * NN - dNdN
-            B[ix] += NN
+            NN = computeL_Ne_Ne(tri_points)
+            dNdN = computeL_dNdN(tri_points)
+            ix = np.ix_(idx,idx)
+            Att[ix] += (k**2*IOR_dict[material]**2) * NN - dNdN
+
+    ixtt = np.ix_(range(Ntt),range(Ntt))
+    A[ixtt] += Att
+    return A

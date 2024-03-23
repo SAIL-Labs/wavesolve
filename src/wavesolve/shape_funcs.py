@@ -265,8 +265,7 @@ def computeL_Ne_Ne(tri): # nenenene
     out[0,0] = out[1,1] = out[2,2] = 1/3
     out[0,1] = out[1,0] = out[1,2] = out[2,1] = 0
     out[0,2] = out[2,0] = -1/6
-    out *= _J
-    return out
+    return out*_J
 
 def computeL_Ne_dN(tri):
     """ integral of LNe_i and LN_j """
@@ -285,8 +284,7 @@ def computeL_Ne_dN(tri):
     out[2,0] = 1/2
     out[1,2] = np.sqrt(2)/6
     out[2,1] = -1/6
-    out *= _J
-    return out
+    return out*_J
 
 def computeL_NN(tri):
     out = np.zeros((3,3),dtype=np.float64)
@@ -297,8 +295,7 @@ def computeL_NN(tri):
     _J = x10*y20 - x20*y10
     out[:] = 1/24
     out[0,0] = out[1,1] = out[2,2] = 1/12
-    out *= _J
-    return out
+    return out*_J
 
 def computeL_dNdN(tri):
     out = np.zeros((3,3),dtype=np.float64)
@@ -311,5 +308,20 @@ def computeL_dNdN(tri):
     out[1,1] = out[2,2] = 1/2
     out[0,1] = out[1,0] = out[0,2] = out[2,0] = -1/2
     out[1,2] = out[2,1] = 0
-    out *= _J
-    return out
+    return out*_J
+
+#curlLNe0 = 2
+#urlLNe1 = 2*np.sqrt(2)
+#curlLNe2 = 2
+
+def computeL_curlNe_curlNe(tri):
+    out = np.zeros((3,3),dtype=np.float64)
+    x10 = tri[1,0] - tri[0,0]
+    y10 = tri[1,1] - tri[0,1]
+    x20 = tri[2,0] - tri[0,0]
+    y20 = tri[2,1] - tri[0,1]
+    _J = x10*y20 - x20*y10
+    out[0,0] = out[2,2] = out[0,2] = out[2,0] = 2
+    out[1,1] = 4
+    out[0,1] = out[1,0] = out[1,2] = out[2,1] = 2*np.sqrt(2)
+    return out*_J

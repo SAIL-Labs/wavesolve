@@ -561,6 +561,8 @@ def get_tri_idxs_KDtree(mesh,meshtree,xa,ya):
             tri_idxs[i][j] = idx if idx is not None else -1
     return tri_idxs
 
+### vectorial stuff 
+
 def construct_Avec(mesh,IOR_dict,k,sparse=False):
     points = mesh.points
     tris = mesh.cells[1].data 
@@ -576,17 +578,119 @@ def construct_Avec(mesh,IOR_dict,k,sparse=False):
         Att = lil_matrix((Ntt,Ntt))
         A = lil_matrix((N,N))
 
-    # Avec only has nonzero transverse-transverse (tt) block
     for material in materials:
         tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
         edge_indices = mesh.edge_indices[tuple(mesh.cell_sets[material])][0,:,0,:]
         for tri,idx in zip(tris,edge_indices):
             tri_points = points[tri]
-            NN = computeL_Ne_Ne(tri_points)
-            dNdN = computeL_dNdN(tri_points)
+            pc = precompute(tri_points,tri)
+
+            NN = computeL_Ne_Ne(tri_points,pc)
+            dNdN = computeL_curlNe_curlNe(tri_points,pc)
+
             ix = np.ix_(idx,idx)
             Att[ix] += (k**2*IOR_dict[material]**2) * NN - dNdN
 
     ixtt = np.ix_(range(Ntt),range(Ntt))
     A[ixtt] += Att
     return A
+
+def construct_Bvec(mesh,IOR_dict,k,sparse=False):
+    points = mesh.points
+    tris = mesh.cells[1].data 
+    materials = mesh.cell_sets.keys()
+    edges = mesh.cells[0].data # for this to work, need to update mesh with get_unique_edges()
+    Ntt = len(edges)
+    Nzz = len(points)
+    N = Ntt+Nzz
+    if not sparse:
+        B = np.zeros((N,N))
+        Bzz = np.zeros((Nzz,Nzz))
+        Btz = np.zeros((Ntt,Nzz))
+        Btt = np.zeros((Ntt,Ntt))
+    else:
+        B = lil_matrix((N,N))
+        Bzz = lil_matrix((Nzz,Nzz))
+        Btz = lil_matrix((Ntt,Nzz))
+        Btt = lil_matrix((Ntt,Ntt))
+
+    for material in materials:
+        tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
+        edge_indices = mesh.edge_indices[tuple(mesh.cell_sets[material])][0,:,0,:]
+        for tri,idx in zip(tris,edge_indices):
+            tri_points = points[tri]
+            pc = precompute(tri_points,tri)
+
+            NeNe = computeL_Ne_Ne(tri_points,pc)
+            NN = computeL_NN(tri_points,pc)
+            dNdN = computeL_dNdN(tri_points,pc)
+            NedN = computeL_Ne_dN(tri_points,pc)
+
+            ixtt = np.ix_(idx,idx)
+            ixtz = np.ix_(idx,tri)
+            ixzz = np.ix_(tri,tri)
+
+            Btt[ixtt] += NeNe
+            Btz[ixtz] += NedN
+            Bzz[ixzz] += dNdN - (k**2*IOR_dict[material]**2)*NN
+    
+    _ixtt = np.ix_(range(Ntt),range(Ntt))
+    _ixtz = np.ix_(range(Ntt),range(Ntt,Ntt+Nzz))
+    _ixzt = np.ix_(range(Ntt,Ntt+Nzz),range(Ntt))
+    _ixzz = np.ix_(range(Ntt,Ntt+Nzz),range(Ntt,Ntt+Nzz))
+
+    B[_ixtt] += Btt
+    B[_ixtz] += Btz
+    B[_ixzt] += Btz.transpose()
+    B[_ixzz] += Bzz
+
+    return B
+
+### scalar stuff - linear triangles
+
+def construct_Ascal(mesh,IOR_dict,k,sparse=False):
+    points = mesh.points
+    tris = mesh.cells[1].data 
+    materials = mesh.cell_sets.keys()
+
+    N = len(points)
+    if not sparse:
+        A = np.zeros((N,N))
+    else:
+        A = lil_matrix((N,N))
+
+    for material in materials:
+        tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
+
+        for tri in tris:
+            tri_points = points[tri]
+            pc = precompute(tri_points,tri)
+
+            NN = computeL_NN(tri,pc)
+            dNdN = computeL_dNdN(tri,pc)
+
+            ix = np.ix_(tri,tri)
+            A[ix] += (k**2*IOR_dict[material]**2) * NN - dNdN
+    return A
+
+def construct_Bscal(mesh,sparse=False):
+    points = mesh.points
+    tris = mesh.cells[1].data 
+    materials = mesh.cell_sets.keys()
+
+    N = len(points)
+    if not sparse:
+        B = np.zeros((N,N))
+    else:
+        B = lil_matrix((N,N))
+
+    for material in materials:
+        tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
+        for tri in tris:
+            tri_points = points[tri]
+            pc = precompute(tri_points,tri)
+            NN = computeL_NN(tri_points,pc)
+            ix = np.ix_(tri,tri)
+            B[ix] += NN
+
+    return B

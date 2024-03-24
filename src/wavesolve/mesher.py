@@ -107,6 +107,7 @@ def fiber_mesh(r_clad,r_core,res,mode="tri",order=2):
         algo = 6
         if mode=="quad":
             algo = 11
+        geom.env.removeAllDuplicates()
         mesh = geom.generate_mesh(dim=2,order=order,algorithm=algo)
         mesh.cell_data["radius"] = r_core
         return mesh

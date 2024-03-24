@@ -119,10 +119,10 @@ def construct_AB(mesh,IOR_dict,k,sparse=False,order=2):
         sparse: whether to return the matrices as sparse or dense; sparse is typically a better option for large meshes with ~>1000 nodes
     """
     if order == 2:
-        assert mesh.shape[1] == 6, "must use order 2 mesh for order 2 solver."
+        assert mesh.points.shape[1] == 6, "must use order 2 mesh for order 2 solver."
         return construct_AB_order2(mesh,IOR_dict,k,sparse)
     elif order == 1:
-        assert mesh.shape[1] == 3, "must use order 2 mesh for order 1 solver"
+        assert mesh.points.shape[1] == 3, "must use order 2 mesh for order 1 solver"
         return construct_AB_order1(mesh,IOR_dict,k,sparse)
     else:
         raise NotImplementedError

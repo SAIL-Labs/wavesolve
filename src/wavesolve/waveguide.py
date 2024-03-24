@@ -3,9 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import gmsh
 import meshio
-import copy,math
-#from wavesolve.mesher import plot_mesh
-from itertools import combinations
+import math
 
 #region miscellaneous functions   
 
@@ -518,21 +516,45 @@ class Waveguide:
         plt.axis('equal')
         plt.show()
     
-    @staticmethod
-    def make_IOR_dict():
-        """ this function should return an IOR dictionary, for mode solving. overwrite in child classes."""
-        pass
-
 class CircularFiber(Waveguide):
-    pass
+    """ circular step-index fiber """
+    def __init__(self,rcore,rclad,ncore,nclad,core_res,clad_res=None):
+        """
+        ARGS
+            rcore: radius of core
+            rclad: radius of cladding
+            ncore: core index
+            nclad: cladding index
+            core_res: number of line segments to divide the core boundary into
+            clad_res: number of line segments to divide the cladding boundary into, default core_res/2
+        """
+        if clad_res == None:
+            clad_res = int(core_res/2)
+        core = Circle(ncore,"core")
+        core.make_points(rcore,core_res)
+        cladding = Circle(nclad,"cladding")
+        cladding.make_points(rclad,clad_res)
+        super().__init__([cladding,core])
 
-class CircPL3(Waveguide):
-    pass
-
-class PetalPL3(Waveguide):
-    pass
-
-class MulticoreFiber(Waveguide):
-    pass
+class EllipticalFiber(Waveguide):
+    """ axis-aligned elliptical core step-index fiber """
+    def __init__(self,acore,bcore,rclad,ncore,nclad,core_res,clad_res=None):
+        """ 
+        ARGS
+            acore: extent of elliptical core along x (the "x" radius)
+            bcore: extent of elliptical core along y (the "y" radius)
+            rclad: radius of cladding, assumed circular
+            ncore: core index
+            nclad: cladding index
+            core_res: number of line segments to divide the core boundary into
+            clad_res: number of line segments to divide the cladding boundary into, default core_res/2
+        """
+        if clad_res == None:
+            clad_res = int(core_res/2)
+        core = Ellipse(ncore,"core")
+        core.make_points(acore,bcore,core_res)
+        cladding = Circle(nclad,"cladding")
+        cladding.make_points(rclad,clad_res)
+        super().__init__([cladding,core])
 
 #endregion

@@ -727,6 +727,7 @@ def plot_vector_mode(mesh,v,ax=None):
     show = False
     if ax is None:
         fig,ax = plt.subplots(1,1)
+        ax.set_aspect('equal')
         show = True
 
     amps = []
@@ -778,7 +779,9 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
     if A.shape[0]>2000 and not ignore_warning and not sparse:
         raise Exception("A and B matrices are larger than 2000 x 2000 - this may make your system unstable. consider setting sparse=True")
     if not sparse:
-        w,v = eig(A,B,subset_by_index=[N-Nmax,N-1],overwrite_a=True,overwrite_b=True)
+        _w,_v = eig(A,B,overwrite_a=True,overwrite_b=True)
+        w = _w[::-1][:Nmax]
+        v = _v.T[::-1][:Nmax]
     else:
         C = spsolve(B,A)
         w,v = eigs(C,k=Nmax,which='SR',sigma=est_eigval)
@@ -787,7 +790,7 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
     nmin,nmax = min(IORs) , max(IORs)
     mode_count = 0
     
-    for _w,_v in zip(w[::-1],v.T[::-1]):
+    for _w,_v in zip(w,v.T):
         if _w<0:
             continue
         ne = np.sqrt(_w/k**2)
@@ -801,4 +804,4 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
         else:
             break
 
-    return w[::-1],v.T[::-1],mode_count
+    return w,v.T,mode_count

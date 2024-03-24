@@ -2,12 +2,14 @@
 """
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.linalg import eigh
-from scipy.sparse.linalg import eigsh,lobpcg
-from scipy.sparse import csr_matrix,lil_matrix
+from scipy.linalg import eigh,eig
+from scipy.sparse.linalg import eigsh,eigs,spsolve
+from scipy.sparse import lil_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs
 from wavesolve.mesher import construct_meshtree,plot_mesh,get_unique_edges
 from wavesolve.shape_funcs import *
+
+### methods for constructing matrices
 
 def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
     """ construct the A and B matrices corresponding to the given waveguide geometry.
@@ -79,56 +81,6 @@ def construct_B(mesh,sparse=False):
         B[ix] += NN
 
     return B
-
-def construct_AB_expl_IOR(mesh,IOR_arr,k):
-    from wavesolve.shape_funcs import compute_dNdN, compute_NN
-    
-    points = mesh.points
-    materials = mesh.cell_sets.keys()
-
-    N = len(points)
-
-    A = np.zeros((N,N))
-    B = np.zeros((N,N))
-
-    for tri,IOR in zip(mesh.cells[1].data,IOR_arr):
-        tri_points = points[tri]
-        NN = compute_NN(tri_points)
-        dNdN = compute_dNdN(tri_points)
-        ix = np.ix_(tri,tri)
-        A[ix] += (k**2*IOR**2) * NN - dNdN
-        B[ix] += NN
-
-    return A,B
-
-# turns out... this isn't actually faster. lol. completely dominated by solving system, not generating matrix
-def construct_AB_fast(mesh,IOR_dict,k):
-    from wavesolve.shape_funcs import compute_dNdN_precomp, compute_J_and_mat, compute_NN_precomp
-    
-    points = mesh.points
-    verts = mesh.cells[1].data
-    materials = mesh.cell_sets.keys()
-
-    N = len(points)
-
-    A = np.zeros((N,N))
-    B = np.zeros((N,N))
-
-    IORs = np.zeros(N)
-    
-    for material in materials:
-        IORs[tuple(mesh.cell_sets[material])] = IOR_dict[material]
-
-    _Js,mat = compute_J_and_mat(points,verts)
-
-    for _J,row,IOR,idxs in zip(_Js,mat,IORs,verts):
-        NN = compute_NN_precomp(_J)
-        dNdN = compute_dNdN_precomp(row)
-        ix = np.ix_(idxs,idxs)
-        A[ix] += k**2*IOR**2 * NN - dNdN
-        B[ix] += NN
-
-    return A,B
 
 def solve(A,B,mesh,k,IOR_dict,plot=False):
     """ Given the A,B matrices, solve the general eigenvalue problem A v = w B v
@@ -261,6 +213,7 @@ def get_eff_index(wl,w):
     return np.sqrt(w/k**2)
 
 def plot_eigenvector(mesh,v,show_mesh = False,ax=None,show=True):
+    print("deprecated - switch to plot_scalar_mode() or plot_vector_mode()")
     points = mesh.points
     if ax is None:
         fig,ax = plt.subplots(figsize=(5,5))
@@ -273,6 +226,22 @@ def plot_eigenvector(mesh,v,show_mesh = False,ax=None,show=True):
     if show:
         plt.show()
     return im
+
+def plot_scalar_mode(mesh,v,show_mesh=False,ax=None):
+    points = mesh.points
+    show=False
+    if ax is None:
+        show=True
+        fig,ax = plt.subplots(figsize=(5,5))
+    
+    ax.set_aspect('equal')
+    im = ax.tricontourf(points[:,0],points[:,1],v,levels=60)
+    
+    if show_mesh:
+        plot_mesh(mesh,show=False,ax=ax)
+    if show:
+        plt.show()
+    return im    
 
 def compute_diff(tri_idx,mesh,_pinv):
     from wavesolve.shape_funcs import compute_NN
@@ -325,12 +294,6 @@ def optimize_for_mode_structure(mesh,IOR_dict,k,target_field,iterations = 1):
         IOR0 = compute_IOR_arr(mesh,IOR_dict)
         IOR = np.sqrt(np.power(IOR0,2)*k**2-coeffs)/k
 
-        # check the new results
-        A,B = construct_AB_expl_IOR(mesh,IOR,k)
-        w,v = solve(A,B,mesh,k,IOR_dict)
-
-    # plot the result
-    #plot_eigenvector(IOR)
     from mesher import plot_mesh_expl_IOR
     plot_mesh_expl_IOR(mesh,IOR)
 
@@ -646,6 +609,68 @@ def construct_Bvec(mesh,IOR_dict,k,sparse=False):
 
     return B
 
+def construct_ABvec(mesh,IOR_dict,k,sparse=False):
+    """construct generalized eigenvalue problem matrices for vectorial formulation of FEM"""
+    points = mesh.points
+    tris = mesh.cells[1].data 
+    materials = mesh.cell_sets.keys()
+    edges = mesh.cells[0].data # for this to work, need to update mesh with get_unique_edges()
+    Ntt = len(edges)
+    Nzz = len(points)
+    N = Ntt+Nzz
+    if not sparse:
+        Att = np.zeros((Ntt,Ntt))
+        A = np.zeros((N,N))
+        B = np.zeros((N,N))
+        Bzz = np.zeros((Nzz,Nzz))
+        Btz = np.zeros((Ntt,Nzz))
+        Btt = np.zeros((Ntt,Ntt))
+    else:
+        Att = lil_matrix((Ntt,Ntt))
+        A = lil_matrix((N,N))
+        B = lil_matrix((N,N))
+        Bzz = lil_matrix((Nzz,Nzz))
+        Btz = lil_matrix((Ntt,Nzz))
+        Btt = lil_matrix((Ntt,Ntt))
+
+    for material in materials:
+        tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
+        edge_indices = mesh.edge_indices[tuple(mesh.cell_sets[material])][0,:,0,:]
+        _k2 = (k**2*IOR_dict[material]**2)
+        for tri,idx in zip(tris,edge_indices):
+            tri_points = points[tri]
+            pc = precompute(tri_points,tri)
+
+            NeNe = computeL_Ne_Ne(tri_points,pc)
+            NN = computeL_NN(tri_points,pc)
+            dNdN = computeL_dNdN(tri_points,pc)
+            NedN = computeL_Ne_dN(tri_points,pc)
+            cdNcdN = computeL_curlNe_curlNe(tri_points,pc)
+
+            ixtt = np.ix_(idx,idx)
+            ixtz = np.ix_(idx,tri)
+            ixzz = np.ix_(tri,tri)
+
+            Att[ixtt] += _k2 * NeNe - cdNcdN
+            Btt[ixtt] += NeNe
+            Btz[ixtz] += NedN
+            Bzz[ixzz] += dNdN - _k2*NN
+    
+    _ixtt = np.ix_(range(Ntt),range(Ntt))
+    _ixtz = np.ix_(range(Ntt),range(Ntt,Ntt+Nzz))
+    _ixzt = np.ix_(range(Ntt,Ntt+Nzz),range(Ntt))
+    _ixzz = np.ix_(range(Ntt,Ntt+Nzz),range(Ntt,Ntt+Nzz))
+
+    A[_ixtt] += Att
+    B[_ixtt] += Btt
+    B[_ixtz] += Btz
+    B[_ixzt] += Btz.transpose()
+    B[_ixzz] += Bzz
+
+    if sparse:
+        return A.tocsc(),B.tocsc()
+    return A,B
+
 ### scalar stuff - linear triangles
 
 def construct_Ascal(mesh,IOR_dict,k,sparse=False):
@@ -695,7 +720,7 @@ def construct_Bscal(mesh,sparse=False):
 
     return B
 
-def plot_vector_modes(mesh,v,ax=None):
+def plot_vector_mode(mesh,v,ax=None):
     tris = mesh.cells[1].data
 
     edge_inds = mesh.edge_indices
@@ -725,3 +750,55 @@ def plot_vector_modes(mesh,v,ax=None):
     ax.quiver(xps,yps,vecs[:,0],vecs[:,1],color='white')
     if show:
         plt.show()
+
+
+def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=False,Nmax=10):
+    """ given a mesh, propagation wavelength, and refractive index dictionary, solve for vector modes. 
+    
+    ARGS: 
+        mesh: mesh object corresponding to waveguide geometry
+        wl: wavelength, defined in the same units as mesh point positions
+        IOR_dict: a dictionary assigning different named regions of the mesh different refractive index values
+        plot: set True to view eigenmodes
+        ignore_warning: bypass the warning raised when the mesh becomes too large to solve safely with scipy.linalg.eigh()
+        sparse: set True to use a sparse solver, which is can handle larger meshes but is slower
+        Nmax: return only the <Nmax> largest eigenvalue/eigenvector pairs
+    RETURNS:
+        w: array of eigenvalues, descending order
+        v: array of corresponding eigenvectors (waveguide modes)
+        N: number non-spurious (i.e. propagating) waveguide modes
+    """
+    
+    k = 2*np.pi/wl
+    est_eigval = np.power(k*max(IOR_dict.values()),2)
+
+    A,B = construct_ABvec(mesh,IOR_dict,k,sparse=sparse)
+    N = A.shape[0]
+
+    if A.shape[0]>2000 and not ignore_warning and not sparse:
+        raise Exception("A and B matrices are larger than 2000 x 2000 - this may make your system unstable. consider setting sparse=True")
+    if not sparse:
+        w,v = eig(A,B,subset_by_index=[N-Nmax,N-1],overwrite_a=True,overwrite_b=True)
+    else:
+        C = spsolve(B,A)
+        w,v = eigs(C,k=Nmax,which='SR',sigma=est_eigval)
+
+    IORs = [ior[1] for ior in IOR_dict.items()]
+    nmin,nmax = min(IORs) , max(IORs)
+    mode_count = 0
+    
+    for _w,_v in zip(w[::-1],v.T[::-1]):
+        if _w<0:
+            continue
+        ne = np.sqrt(_w/k**2)
+        if plot:
+            if not (nmin <= ne <= nmax):
+                print("warning: spurious mode! stopping plotting ... ")
+            print("effective index: ",get_eff_index(wl,_w))
+            plot_vector_mode(mesh,_v)
+        if (nmin <= ne <= nmax):
+            mode_count+=1
+        else:
+            break
+
+    return w[::-1],v.T[::-1],mode_count

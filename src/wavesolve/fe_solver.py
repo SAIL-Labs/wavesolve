@@ -102,8 +102,8 @@ def construct_AB_order1(mesh,IOR_dict,k,sparse=False):
             tri_points = points[tri]
             pc = precompute(tri_points,tri)
 
-            NN = computeL_NN(tri,pc)
-            dNdN = computeL_dNdN(tri,pc)
+            NN = computeL_NN(precomp=pc)
+            dNdN = computeL_dNdN(precomp=pc)
 
             ix = np.ix_(tri[:3],tri[:3])
             A[ix] += (k**2*IOR_dict[material]**2) * NN - dNdN
@@ -161,11 +161,11 @@ def construct_AB_vec(mesh,IOR_dict,k,sparse=False):
             tri_points = points[tri[:3]]
             pc = precompute(tri_points,tri)
 
-            NeNe = computeL_Ne_Ne(tri_points,pc)
-            NN = computeL_NN(tri_points,pc)
-            dNdN = computeL_dNdN(tri_points,pc)
-            NedN = computeL_Ne_dN(tri_points,pc)
-            cdNcdN = computeL_curlNe_curlNe(tri_points,pc)
+            NeNe = computeL_Ne_Ne(precomp=pc)
+            NN = computeL_NN(precomp=pc)
+            dNdN = computeL_dNdN(precomp=pc)
+            NedN = computeL_Ne_dN(precomp=pc)
+            cdNcdN = computeL_curlNe_curlNe(precomp=pc)
 
             ixtt = np.ix_(idx,idx)
             ixtz = np.ix_(idx,tri[:3])

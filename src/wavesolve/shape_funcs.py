@@ -291,12 +291,12 @@ def LNe2(p,tri,tri_idx):
     yv = (x - x21 - x1)/_J*l31
     return np.array([xv,yv])
 
-def computeL_Ne_Ne(tri,precomp=None): # nenenene
+def computeL_Ne_Ne(tri=None,tri_idx=None,precomp=None): # nenenene
     """ integral of LNe_i LNe_j over triangle tri """
     out = np.zeros((3,3),dtype=np.float64)
 
     if precomp is None:
-        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri)
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
     else:
         x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
     
@@ -309,19 +309,19 @@ def computeL_Ne_Ne(tri,precomp=None): # nenenene
     out[2,0] = out[0,2] = l31*l12 * (-l12**2+3*x21*x31-l31**2+3*y21*y31)/(12*_J)
     return out
 
-def computeL_curlNe_curlNe(tri,precomp=None):
+def computeL_curlNe_curlNe(tri=None,tri_idx=None,precomp=None):
     if precomp is None:
-        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri)
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
     else:
         x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
     ls = np.array([l12,l23,l31])
     return 2/_J * ls[:,None]*ls[None,:]
 
-def computeL_Ne_dN(tri,precomp=None):
+def computeL_Ne_dN(tri=None,tri_idx=None,precomp=None):
     """ integral of Ne_i and dN_j """
     out = np.zeros((3,3),dtype=np.float64)
     if precomp is None:
-        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri)
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
     else:
         x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
 
@@ -336,20 +336,20 @@ def computeL_Ne_dN(tri,precomp=None):
     out[0,2] = l12*(l12**2-2*x21*x31-2*y21*y31)/(6*_J)
     return out
 
-def computeL_NN(tri,precomp=None):
+def computeL_NN(tri=None,tri_idx=None,precomp=None):
     out = np.zeros((3,3),dtype=np.float64)
     if precomp is None:
-        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri)
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
     else:
         x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
     out[:] = _J/24
     out[0,0] = out[1,1] = out[2,2] = _J/12
     return out
 
-def computeL_dNdN(tri,precomp=None):
+def computeL_dNdN(tri=None,tri_idx=None,precomp=None):
     out = np.zeros((3,3),dtype=np.float64)
     if precomp is None:
-        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri)
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
     else:
         x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
 

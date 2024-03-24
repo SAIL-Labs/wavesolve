@@ -780,8 +780,9 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
         raise Exception("A and B matrices are larger than 2000 x 2000 - this may make your system unstable. consider setting sparse=True")
     if not sparse:
         _w,_v = eig(A,B,overwrite_a=True,overwrite_b=True)
-        w = _w[::-1][:Nmax]
-        v = _v[:,::-1][:,:Nmax]
+        inds = _w.argsort()[::-1]
+        w = _w[inds][:Nmax]
+        v = _v[:,inds][:,:Nmax]
     else:
         C = spsolve(B,A)
         w,v = eigs(C,k=Nmax,which='SR',sigma=est_eigval)

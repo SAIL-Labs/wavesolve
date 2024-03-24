@@ -95,7 +95,6 @@ def construct_AB_order1(mesh,IOR_dict,k,sparse=False):
         A = lil_matrix((N,N))
         B = lil_matrix((N,N))
 
-
     for material in materials:
         tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
 
@@ -106,7 +105,7 @@ def construct_AB_order1(mesh,IOR_dict,k,sparse=False):
             NN = computeL_NN(tri,pc)
             dNdN = computeL_dNdN(tri,pc)
 
-            ix = np.ix_(tri,tri)
+            ix = np.ix_(tri[:3],tri[:3])
             A[ix] += (k**2*IOR_dict[material]**2) * NN - dNdN
             B[ix] += NN
     return A,B
@@ -159,7 +158,7 @@ def construct_AB_vec(mesh,IOR_dict,k,sparse=False):
         edge_indices = mesh.edge_indices[tuple(mesh.cell_sets[material])][0,:,0,:]
         _k2 = (k**2*IOR_dict[material]**2)
         for tri,idx in zip(tris,edge_indices):
-            tri_points = points[tri]
+            tri_points = points[tri[:3]]
             pc = precompute(tri_points,tri)
 
             NeNe = computeL_Ne_Ne(tri_points,pc)
@@ -169,8 +168,8 @@ def construct_AB_vec(mesh,IOR_dict,k,sparse=False):
             cdNcdN = computeL_curlNe_curlNe(tri_points,pc)
 
             ixtt = np.ix_(idx,idx)
-            ixtz = np.ix_(idx,tri)
-            ixzz = np.ix_(tri,tri)
+            ixtz = np.ix_(idx,tri[:3])
+            ixzz = np.ix_(tri,tri[:3])
 
             Att[ixtt] += _k2 * NeNe - cdNcdN
             Btt[ixtt] += NeNe

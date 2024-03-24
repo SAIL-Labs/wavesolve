@@ -7,6 +7,33 @@ import math
 
 #region miscellaneous functions   
 
+def get_unique_edges(mesh,mutate=True):
+    """ get set of unique edges in mesh. when mutate = True, this function adds a connectivity table for edges to the mesh;
+        this table is not included in the base pygmsh/gmsh meshes, but is needed for vectorial FEM. """
+    tris = mesh.cells[1].data
+    
+    unique_edges = list()
+    edge_indices = np.zeros_like(tris)
+
+    i = 0
+    for j,tri in enumerate(tris):
+        e0 = sorted([tri[0],tri[1]])
+        e1 = sorted([tri[1],tri[2]])
+        e2 = sorted([tri[2],tri[0]])
+        es= [e0,e1,e2]
+        for k,e in enumerate(es):
+            if e not in unique_edges:
+                unique_edges.append(e)
+                edge_indices[j,k] = i
+                i += 1
+            else:
+                edge_indices[j,k] = unique_edges.index(e)
+    out = np.array(unique_edges)
+    if mutate:
+        mesh.cells[0].data = out
+        mesh.edge_indices = edge_indices
+    return out,edge_indices
+
 def plot_mesh(mesh,IOR_dict=None,alpha=0.3,ax=None,plot_points=True):
     """ plot a mesh and associated refractive index distribution
     Args:
@@ -367,6 +394,7 @@ class Waveguide:
                     geom.add_physical(el,self.prim2Dgroups[i].label)
 
             mesh = geom.generate_mesh(dim=2,order=order,algorithm=algo)
+            get_unique_edges(mesh)
             return mesh
     
     def compute_mesh_size(self,x,y,_scale=1.,_power=1.,min_size=None,max_size=None):
@@ -462,6 +490,7 @@ class Waveguide:
             if writeto is not None:
                 gmsh.write(writeto+".msh")
                 gmsh.clear()
+            get_unique_edges(mesh)
             return mesh
 
     def assign_IOR(self):

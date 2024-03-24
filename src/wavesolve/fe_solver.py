@@ -99,13 +99,13 @@ def construct_AB_order1(mesh,IOR_dict,k,sparse=False):
         tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
 
         for tri in tris:
-            tri_points = points[tri[:3]]
-            pc = precompute(tri_points,tri[:3])
+            tri_points = points[tri]
+            pc = precompute(tri_points,tri)
 
             NN = computeL_NN(precomp=pc)
             dNdN = computeL_dNdN(precomp=pc)
 
-            ix = np.ix_(tri[:3],tri[:3])
+            ix = np.ix_(tri,tri)
             A[ix] += (k**2*IOR_dict[material]**2) * NN - dNdN
             B[ix] += NN
     return A,B
@@ -119,9 +119,13 @@ def construct_AB(mesh,IOR_dict,k,sparse=False,order=2):
         sparse: whether to return the matrices as sparse or dense; sparse is typically a better option for large meshes with ~>1000 nodes
     """
     if order == 2:
+        assert mesh.shape[1] == 6, "must use order 2 mesh for order 2 solver."
         return construct_AB_order2(mesh,IOR_dict,k,sparse)
-    else:
+    elif order == 1:
+        assert mesh.shape[1] == 3, "must use order 2 mesh for order 1 solver"
         return construct_AB_order1(mesh,IOR_dict,k,sparse)
+    else:
+        raise NotImplementedError
 
 def construct_AB_vec(mesh,IOR_dict,k,sparse=False):
     """construct generalized eigenvalue problem matrices for VECTOR formulation of FEM
@@ -158,7 +162,7 @@ def construct_AB_vec(mesh,IOR_dict,k,sparse=False):
         edge_indices = mesh.edge_indices[tuple(mesh.cell_sets[material])][0,:,0,:]
         _k2 = (k**2*IOR_dict[material]**2)
         for tri,idx in zip(tris,edge_indices):
-            tri_points = points[tri[:3]]
+            tri_points = points[tri]
             pc = precompute(tri_points,tri)
 
             NeNe = computeL_Ne_Ne(precomp=pc)
@@ -168,8 +172,8 @@ def construct_AB_vec(mesh,IOR_dict,k,sparse=False):
             cdNcdN = computeL_curlNe_curlNe(precomp=pc)
 
             ixtt = np.ix_(idx,idx)
-            ixtz = np.ix_(idx,tri[:3])
-            ixzz = np.ix_(tri,tri[:3])
+            ixtz = np.ix_(idx,tri)
+            ixzz = np.ix_(tri,tri)
 
             Att[ixtt] += _k2 * NeNe - cdNcdN
             Btt[ixtt] += NeNe

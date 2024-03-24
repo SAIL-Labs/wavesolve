@@ -547,7 +547,7 @@ class Waveguide:
     
 class CircularFiber(Waveguide):
     """ circular step-index fiber """
-    def __init__(self,rcore,rclad,ncore,nclad,core_res,clad_res=None):
+    def __init__(self,rcore,rclad,ncore,nclad,core_res,clad_res=None,core_mesh_size=None,clad_mesh_size=None):
         """
         ARGS
             rcore: radius of core
@@ -561,13 +561,18 @@ class CircularFiber(Waveguide):
             clad_res = int(core_res/2)
         core = Circle(ncore,"core")
         core.make_points(rcore,core_res)
+        if core_mesh_size is not None:
+            core.mesh_size = core_mesh_size
+
         cladding = Circle(nclad,"cladding")
         cladding.make_points(rclad,clad_res)
+        if clad_mesh_size is not None:
+            cladding.mesh_size = clad_mesh_size
         super().__init__([cladding,core])
 
 class EllipticalFiber(Waveguide):
     """ axis-aligned elliptical core step-index fiber """
-    def __init__(self,acore,bcore,rclad,ncore,nclad,core_res,clad_res=None):
+    def __init__(self,acore,bcore,rclad,ncore,nclad,core_res,clad_res=None,core_mesh_size=None,clad_mesh_size=None):
         """ 
         ARGS
             acore: extent of elliptical core along x (the "x" radius)
@@ -582,8 +587,12 @@ class EllipticalFiber(Waveguide):
             clad_res = int(core_res/2)
         core = Ellipse(ncore,"core")
         core.make_points(acore,bcore,core_res)
+        if core_mesh_size is not None:
+            core.mesh_size = core_mesh_size
         cladding = Circle(nclad,"cladding")
         cladding.make_points(rclad,clad_res)
+        if clad_mesh_size is not None:
+            cladding.mesh_size = clad_mesh_size
         super().__init__([cladding,core])
 
 #endregion

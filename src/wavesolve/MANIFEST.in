@@ -1,2 +1,0 @@
-include src/wavesolve/FEval/Project.toml
-recursive-include src/wavesolve/FEval *

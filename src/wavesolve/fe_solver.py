@@ -535,7 +535,7 @@ def plot_vector_mode(mesh,v,show_mesh=False,ax=None,arrow_scale=1):
     vecs = np.array(vecs)
 
     ax.tricontourf(xps,yps,amps,levels=60)
-    ax.quiver(xps,yps,vecs[:,0],vecs[:,1],color='white',width=arrow_scale)
+    ax.quiver(xps,yps,vecs[:,0],vecs[:,1],color='white',width=arrow_scale*0.005,scale=1/arrow_scale)
     if show_mesh:
         plot_mesh(mesh,show=False,ax=ax)
     if show:

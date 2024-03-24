@@ -227,12 +227,15 @@ def compute_J(vertices):
     _J = x21*y31-x31*y21
     return _J   
 
-### vector shape functions - linear triangle elements ###
-### reference: https://ieeexplore.ieee.org/document/5628380
+### linear triangle elements ###
 
 LN0 = lambda u,v: 1 - u - v
 LN1 = lambda u,v: u
 LN2 = lambda u,v: v 
+
+def get_linear_basis_funcs_affine():
+    """ returns 3 functions correpsonding to the 3 nodes in an LT element."""
+    return [LN0,LN1,LN2]
 
 dLN0du = -1
 dLN0dv = -1
@@ -265,6 +268,8 @@ def precompute(tri,tri_idx):
 
     return (x21,y21,x31,y31,x31,y31,l12,l23,l31,_J)
 
+### vector basis functions for linear triangles ###
+### reference: https://ieeexplore.ieee.org/document/5628380
 ## the below was computed through sympy ##
 
 def LNe0(p,tri,tri_idx):
@@ -290,6 +295,10 @@ def LNe2(p,tri,tri_idx):
     xv = (-y + y21 + y1)/_J*l31
     yv = (x - x21 - x1)/_J*l31
     return np.array([xv,yv])
+
+def get_edge_linear_basis_funcs_affine():
+    """ returns 3 vector-valued functions correpsonding to the 3 edges in an LT element."""
+    return [LNe0,LNe1,LNe2]
 
 def computeL_Ne_Ne(tri=None,tri_idx=None,precomp=None): # nenenene
     """ integral of LNe_i LNe_j over triangle tri """

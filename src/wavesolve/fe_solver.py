@@ -154,7 +154,7 @@ def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
 
     return w[::-1],v.T[::-1],mode_count
 
-def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=False,Nmax=10):
+def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10):
     """ given a mesh, propagation wavelength, and refractive index dictionary, solve for modes. this has the same functionality
         as running construct_AB() and solve() 
     
@@ -753,7 +753,7 @@ def plot_vector_mode(mesh,v,ax=None):
         plt.show()
 
 
-def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=False,Nmax=10):
+def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10):
     """ given a mesh, propagation wavelength, and refractive index dictionary, solve for vector modes. 
     
     ARGS: 

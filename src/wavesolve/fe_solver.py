@@ -314,7 +314,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True
             if not (nmin <= ne <= nmax):
                 print("warning: spurious mode! stopping plotting ... ")
             print("effective index: ",get_eff_index(wl,_w))
-            plot_eigenvector(mesh,_v)
+            plot_scalar_mode(mesh,_v)
         if (nmin <= ne <= nmax):
             mode_count+=1
         else:
@@ -474,6 +474,13 @@ def plot_eigenvector(mesh,v,show_mesh = False,ax=None,show=True):
     return im
 
 def plot_scalar_mode(mesh,v,show_mesh=False,ax=None):
+    """ plot a scalar eigenmode 
+    ARGS
+        mesh: finite element mesh
+        v: an array (column vector) corresponding to an eigenmode
+        show_mesh: set True to additionally plot the mesh geometry
+        ax: optionally put the plot on a specific matplotlib axis
+    """
     points = mesh.points
     show=False
     if ax is None:
@@ -489,7 +496,15 @@ def plot_scalar_mode(mesh,v,show_mesh=False,ax=None):
         plt.show()
     return im    
 
-def plot_vector_mode(mesh,v,show_mesh=False,ax=None):
+def plot_vector_mode(mesh,v,show_mesh=False,ax=None,arrow_scale=1):
+    """ plot a scalar eigenmode 
+    ARGS
+        mesh: finite element mesh
+        v: an array (column vector) corresponding to an eigenmode
+        show_mesh: set True to additionally plot the mesh geometry
+        ax: optionally put the plot on a specific matplotlib axis
+        arrow_scale: factor for rescaling arrow sizes in the quiver plot
+    """
     tris = mesh.cells[1].data
 
     edge_inds = mesh.edge_indices
@@ -517,7 +532,7 @@ def plot_vector_mode(mesh,v,show_mesh=False,ax=None):
     vecs = np.array(vecs)
 
     ax.tricontourf(xps,yps,amps,levels=60)
-    ax.quiver(xps,yps,vecs[:,0],vecs[:,1],color='white')
+    ax.quiver(xps,yps,arrow_scale*vecs[:,0],arrow_scale*vecs[:,1],color='white')
     if show_mesh:
         plot_mesh(mesh,show=False,ax=ax)
     if show:

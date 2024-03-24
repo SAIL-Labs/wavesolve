@@ -318,8 +318,6 @@ class Waveguide:
     def __init__(self,prim2Dgroups):
         self.prim2Dgroups = prim2Dgroups # an arrangement of Prim2D objects, stored as a (potentially nested) list. each element is overwritten by the next.
         self.IOR_dict = {}
-        self.update(0) # default behavior: init with z=0 for all primitives
-        self.z_ex = None # z extent
         
         primsflat = [] # flat array of primitives
         for i,p in enumerate(self.prim2Dgroups):

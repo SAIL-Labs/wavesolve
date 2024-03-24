@@ -253,7 +253,7 @@ def get_unique_edges(mesh,mutate=True):
         es= [e0,e1,e2]
         for k,e in enumerate(es):
             if e not in unique_edges:
-                unique_edges.add(e)
+                unique_edges.append(e)
                 edge_indices[j,k] = i
                 i += 1
             else:

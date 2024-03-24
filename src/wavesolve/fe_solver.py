@@ -99,8 +99,8 @@ def construct_AB_order1(mesh,IOR_dict,k,sparse=False):
         tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
 
         for tri in tris:
-            tri_points = points[tri]
-            pc = precompute(tri_points,tri)
+            tri_points = points[tri[:3]]
+            pc = precompute(tri_points,tri[:3])
 
             NN = computeL_NN(precomp=pc)
             dNdN = computeL_dNdN(precomp=pc)

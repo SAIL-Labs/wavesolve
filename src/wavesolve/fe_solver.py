@@ -694,3 +694,34 @@ def construct_Bscal(mesh,sparse=False):
             B[ix] += NN
 
     return B
+
+def plot_vector_modes(mesh,v,ax=None):
+    tris = mesh.cells[1].data
+
+    edge_inds = mesh.edge_indices
+    show = False
+    if ax is None:
+        fig,ax = plt.subplots(1,1)
+        show = True
+
+    amps = []
+    vecs = []
+    xps = []
+    yps = []
+
+    for tri,edge in zip(tris,edge_inds):
+        tripoints = mesh.points[tri]
+        centroid = np.mean(tripoints,axis=0)
+
+        vec = LNe0(centroid,tripoints,tri)*v[edge[0]] + LNe1(centroid,tripoints,tri)*v[edge[1]] +LNe2(centroid,tripoints,tri)*v[edge[2]]
+        amps.append(np.linalg.norm(vec))
+        vecs.append(vec)
+        xps.append(centroid[0])
+        yps.append(centroid[1])
+
+    vecs = np.array(vecs)
+
+    ax.tricontourf(xps,yps,amps,levels=60)
+    ax.quiver(xps,yps,vecs[:,0],vecs[:,1],color='white')
+    if show:
+        plt.show()

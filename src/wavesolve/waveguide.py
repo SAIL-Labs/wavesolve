@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import gmsh
 import meshio
-import copy
+import copy,math
 #from wavesolve.mesher import plot_mesh
 from itertools import combinations
 
@@ -124,6 +124,54 @@ def dist(p1,p2):
 def rotate(v,theta):
     return np.array([np.cos(theta)*v[0] - np.sin(theta)*v[1] , np.sin(theta)*v[0] + np.cos(theta)*v[1]])
 
+def ellipse_dist(semi_major, semi_minor, c, p, iters=3):
+    """ compute signed distance to axis-aligned ellipse boundary """  
+
+    _p = [p[0]-c[0],p[1]-c[1]]
+
+    px = abs(_p[0])
+    py = abs(_p[1])
+
+    tx = 0.707
+    ty = 0.707
+
+    a = semi_major
+    b = semi_minor
+
+    inside = _p[0]**2/semi_major**2 + _p[1]**2/semi_minor**2 <= 1
+
+    for x in range(0,iters):
+        x = a * tx
+        y = b * ty
+
+        ex = (a*a - b*b) * tx**3 / a
+        ey = (b*b - a*a) * ty**3 / b
+
+        rx = x - ex
+        ry = y - ey
+
+        qx = px - ex
+        qy = py - ey
+
+        r = math.hypot(ry, rx)
+        q = math.hypot(qy, qx)
+        
+        if q == 0:
+            tx = 1
+            ty = 1
+        else:
+            tx = min(1, max(0, (qx * r / q + ex) / a))
+            ty = min(1, max(0, (qy * r / q + ey) / b))
+        
+        t = math.hypot(ty, tx)
+        tx /= t 
+        ty /= t 
+
+    isect = [math.copysign(a * tx,_p[0]), math.copysign(b * ty,_p[1])]
+    sgn = 1 if not inside else -1
+    dist = math.sqrt((_p[0]-isect[0])**2 + (_p[1]-isect[1])**2)*sgn
+    return dist
+
 #endregion    
 
 #region Prim2D
@@ -177,13 +225,9 @@ class Prim2D:
         """
         pass
 
-    def nearest_boundary_point(self,x,y):
-        """ this function computes the point on the boundary that is closest to a point (x,y). """
-        pass
-
 class Circle(Prim2D):
     """ a Circle primitive, defined by radius, center, and number of sides """
-    
+
     def make_points(self,radius,res,center=(0,0)):
         thetas = np.linspace(0,2*np.pi,res,endpoint=False)
         points = []
@@ -193,17 +237,11 @@ class Circle(Prim2D):
 
         self.radius = radius # save params for later comp
         self.center = center # 
-
+        self.points = points
         return points
     
     def boundary_dist(self, x, y):
         return np.sqrt(np.power(x-self.center[0],2)+np.power(y-self.center[1],2)) - self.radius
-    
-    def nearest_boundary_point(self, x, y):
-        t = np.arctan2(y-self.center[1],x-self.center[0])
-        bx = self.radius*np.cos(t)
-        by = self.radius*np.sin(t)
-        return bx+self.center[0],by+self.center[1]
 
 class Rectangle(Prim2D):
     """ rectangle primitive, defined by corner pounts. """
@@ -211,6 +249,7 @@ class Rectangle(Prim2D):
     def make_points(self,xmin,xmax,ymin,ymax):
         points = np.array([[xmin,ymin],[xmax,ymin],[xmax,ymax],[xmin,ymax]])
         self.bounds = [xmin,xmax,ymin,ymax]
+        self.points = points
         return points
 
     def boundary_dist(self, x, y):
@@ -222,19 +261,23 @@ class Rectangle(Prim2D):
             return -dist
         return dist
     
-    def nearest_boundary_point(self, x, y):
-        bounds = self.bounds
-        xd0,xd1 = abs(bounds[0]-x),abs(bounds[1]-x)
-        yd0,yd1 = abs(bounds[2]-y),abs(bounds[3]-y)
-        i = np.argmin([xd0,xd1,yd0,yd1])
-        if i==0:
-            return bounds[0],y
-        elif i==1:
-            return bounds[1],y
-        elif i==2:
-            return x,bounds[2]
-        else:
-            return x,bounds[3]
+class Ellipse(Prim2D):
+    """axis-aligned ellipse. a is the semi-axis along x, b is the semi-axis along y."""
+    def make_points(self,a,b,res,center=(0,0)):
+        thetas = np.linspace(0,2*np.pi,res,endpoint=False)
+        points = []
+        for t in thetas:
+            points.append((a*np.cos(t)+center[0],b*np.sin(t)+center[1]))        
+        points = np.array(points)
+
+        self.a = a
+        self.b = b
+        self.center = center
+        self.points = points
+        return points
+
+    def boundary_dist(self, x, y):
+        return ellipse_dist(self.a,self.b,self.center,[x,y])
 
 class Prim2DUnion(Prim2D):
     def __init__(self,p1:Prim2D,p2:Prim2D):

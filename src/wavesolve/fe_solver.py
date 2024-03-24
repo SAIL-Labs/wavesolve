@@ -342,7 +342,7 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
     k = 2*np.pi/wl
     est_eigval = np.power(k*max(IOR_dict.values()),2)
 
-    A,B = construct_ABvec(mesh,IOR_dict,k,sparse=sparse)
+    A,B = construct_AB_vec(mesh,IOR_dict,k,sparse=sparse)
     N = A.shape[0]
 
     if A.shape[0]>2000 and not ignore_warning and not sparse:

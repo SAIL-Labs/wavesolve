@@ -781,7 +781,7 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
     if not sparse:
         _w,_v = eig(A,B,overwrite_a=True,overwrite_b=True)
         w = _w[::-1][:Nmax]
-        v = _v[:,::-1][:Nmax]
+        v = _v[:,::-1][:,:Nmax]
     else:
         C = spsolve(B,A)
         w,v = eigs(C,k=Nmax,which='SR',sigma=est_eigval)

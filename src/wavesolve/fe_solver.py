@@ -474,7 +474,7 @@ def plot_eigenvector(mesh,v,show_mesh = False,ax=None,show=True):
     im = ax.tricontourf(points[:,0],points[:,1],v,levels=60)
     
     if show_mesh:
-        plot_mesh(mesh,show=False,ax=ax)
+        plot_mesh(mesh,ax=ax)
     if show:
         plt.show()
     return im
@@ -497,7 +497,7 @@ def plot_scalar_mode(mesh,v,show_mesh=False,ax=None):
     im = ax.tricontourf(points[:,0],points[:,1],v,levels=60)
     
     if show_mesh:
-        plot_mesh(mesh,show=False,ax=ax)
+        plot_mesh(mesh,ax=ax)
     if show:
         plt.show()
     return im    
@@ -540,7 +540,7 @@ def plot_vector_mode(mesh,v,show_mesh=False,ax=None):
     ax.tricontourf(xps,yps,amps,levels=60)
     ax.quiver(xps,yps,vecs[:,0],vecs[:,1],color='white')
     if show_mesh:
-        plot_mesh(mesh,show=False,ax=ax)
+        plot_mesh(mesh,ax=ax)
     if show:
         plt.show()
 

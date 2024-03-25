@@ -83,6 +83,8 @@ def construct_B_order2(mesh,sparse=False):
 
     return B
 
+construct_B = construct_B_order2
+
 def construct_AB_order1(mesh,IOR_dict,k,sparse=False):
     points = mesh.points
     tris = mesh.cells[1].data 

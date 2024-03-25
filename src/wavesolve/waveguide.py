@@ -434,7 +434,7 @@ class Waveguide:
             scaled_size = min(max_size,target_size)    
         return target_size
     
-    def make_mesh_bndry_ref(self,writeto=None,order=2):
+    def make_mesh_bndry_ref(self,algo=6,order=2):
         """ construct a mesh with boundary refinement at material interfaces."""
 
         _scale = self.mesh_dist_scale
@@ -442,7 +442,6 @@ class Waveguide:
         min_mesh_size = self.min_mesh_size
         max_mesh_size = self.max_mesh_size
 
-        algo = 6
         with pygmsh.occ.Geometry() as geom:
             gmsh.option.setNumber('General.Terminal', 0)
             # make the polygons
@@ -487,9 +486,7 @@ class Waveguide:
             geom.set_mesh_size_callback(callback)
 
             mesh = geom.generate_mesh(dim=2,order=order,algorithm=algo)
-            if writeto is not None:
-                gmsh.write(writeto+".msh")
-                gmsh.clear()
+
             get_unique_edges(mesh)
             return mesh
 

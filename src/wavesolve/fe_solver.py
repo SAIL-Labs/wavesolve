@@ -5,8 +5,8 @@ import matplotlib.pyplot as plt
 from scipy.linalg import eigh,eig
 from scipy.sparse.linalg import eigsh,eigs,spsolve
 from scipy.sparse import lil_matrix
-from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs
-from wavesolve.mesher import construct_meshtree,plot_mesh,get_unique_edges
+from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs,get_linear_basis_funcs_affine,get_edge_linear_basis_funcs_affine
+from wavesolve.mesher import construct_meshtree,plot_mesh
 from wavesolve.shape_funcs import *
 
 #region FEM matrices
@@ -623,25 +623,57 @@ def get_tri_idxs(mesh,xa,ya):
             tri_idxs[i][j] = idx if idx is not None else -1
     return tri_idxs
 
-def get_interp_weights(mesh,xa,ya,tri_idxs):
-    weights = np.zeros((len(xa),len(ya),6))
+def get_interp_weights(mesh,xa,ya,tri_idxs,order=2):
+    assert order in [1,2], "order must be 1 or 2, corresponding to mesh element order"
+
+    if order==2:
+        N = 6
+    else:
+        N = 3
+
+    weights = np.zeros((len(xa),len(ya),N))
+
     points = mesh.points
     tris = mesh.cells[1].data
 
     for i in range(len(xa)):
         for j in range(len(ya)):
-            for k in range(6):
+            for k in range(N):
                 if tri_idxs[i,j]==-1:
                     weights[i,j,k] = np.nan
                     continue
                 gridpoint = [xa[i],ya[j]]
                 vertices = points[tris[tri_idxs[i,j]]][:,:2]
                 gridpoint_uv = affine_transform(vertices)(gridpoint)
-                weights[i,j,k] = get_basis_funcs_affine()[k](gridpoint_uv[0], gridpoint_uv[1])
+                if order==2:
+                    weights[i,j,k] = get_basis_funcs_affine()[k](gridpoint_uv[0], gridpoint_uv[1])
+                else:
+                    weights[i,j,k] = get_linear_basis_funcs_affine()[k](gridpoint_uv[0], gridpoint_uv[1])
     return weights
 
-def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None):
-    """ interpolates eigenvector v, computed on mesh, onto rectangular grid defined by 1D arrays xa and ya.
+def get_interp_weights_vec(mesh,xa,ya,tri_idxs):
+    N = 3
+    weights = np.zeros((len(xa),len(ya),N,2)) # weights are vectorial; list dim stores (x,y) component
+
+    points = mesh.points
+    tris = mesh.cells[1].data
+
+    for i in range(len(xa)):
+        for j in range(len(ya)):
+            for k in range(N):
+                tri = tri_idxs[i,j]
+                if tri==-1:
+                    weights[i,j,k] = np.nan
+                    continue
+                
+                gridpoint = [xa[i],ya[j]]
+                vertices = points[tris[tri]][:,:2]
+
+                weights[i,j,k,:] = get_edge_linear_basis_funcs_affine()[k](gridpoint,vertices,mesh.cells[1].data[tri])
+    return weights
+
+def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None,order=2,maxr=0):
+    """ interpolates SCALAR eigenmode v, computed on mesh, onto rectangular grid defined by 1D arrays xa and ya.
     ARGS:
         v: eigenvector to interpolate 
         mesh: mesh object corresponding to waveguide geometry
@@ -649,6 +681,9 @@ def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None
         ya: 1D array of y points for output grid
         tri_idxs: an array of indices. the first index corresponds to the first triangle containing the first mesh point, etc.
         interp_weights: interpolation weights. these are multiplied against v and summed to get the interpolated field
+        mesh_tree: a KDtree representing the mesh triangles. if None, one will be made with construct_meshtree(mesh)
+        order: the order of the finite element mesh
+        maxr: points more than this distance from the origin are ignored. if 0, all points are assumed to lie inside the mesh
     RETURNS:
         the mode v interpolated over the rectangular grid (xa,ya)
     """
@@ -656,13 +691,43 @@ def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None
     if meshtree is None:
         meshtree = construct_meshtree(mesh)
 
-    tri_idxs = get_tri_idxs_KDtree(mesh,meshtree,xa,ya) if tri_idxs is None else tri_idxs
-    interp_weights = get_interp_weights(mesh,xa,ya,tri_idxs) if interp_weights is None else interp_weights
+    tri_idxs = get_tri_idxs_KDtree(mesh,meshtree,xa,ya,maxr=maxr) if tri_idxs is None else tri_idxs
+    interp_weights = get_interp_weights(mesh,xa,ya,tri_idxs,order=order) if interp_weights is None else interp_weights
 
     tris = mesh.cells[1].data
     field_points = v[tris[tri_idxs]]
 
     return np.sum(field_points*interp_weights,axis=2)
+
+def interpolate_vec(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None,maxr=0):
+    """ interpolates the VECTOR eigenmode v, computed on mesh, onto rectangular grid defined by 1D arrays xa and ya.
+    ARGS:
+        v: eigenvector to interpolate 
+        mesh: mesh object corresponding to waveguide geometry
+        xa: 1D array of x points for output grid
+        ya: 1D array of y points for output grid
+        tri_idxs: an array of indices. the first index corresponds to the first triangle containing the first mesh point, etc.
+        interp_weights: interpolation weights. these are multiplied against v and summed to get the interpolated field
+        mesh_tree: a KDtree representing the mesh triangles. if None, one will be made with construct_meshtree(mesh)
+        order: the order of the finite element mesh
+        maxr: points more than this distance from the origin are ignored. if 0, all points are assumed to lie inside the mesh
+    RETURNS:
+        the mode v interpolated over the rectangular grid (xa,ya)
+    """
+    edge_indices = mesh.edge_indices
+    edges = mesh.cells[0].data # for this to work, need to update mesh with get_unique_edges()
+    Ntt = len(edges)
+    vtt = v[:Ntt]
+
+    if meshtree is None:
+        meshtree = construct_meshtree(mesh)
+
+    tri_idxs = get_tri_idxs_KDtree(mesh,meshtree,xa,ya,maxr=maxr) if tri_idxs is None else tri_idxs
+    interp_weights = get_interp_weights_vec(mesh,xa,ya,tri_idxs) if interp_weights is None else interp_weights
+
+    field_points = vtt[edge_indices[tri_idxs]]
+
+    return np.sum(field_points[:,:,:,None]*interp_weights,axis=2)
 
 def unstructured_interpolate(v,inmesh,point,inmeshtree=None,max_tries = 10):
     """ interpolate the field v evaluated on the points of inmesh to compute the value at an arbitrary [x,y] point. 
@@ -736,7 +801,10 @@ def get_mesh_interpolate_matrices(inmesh,outmesh,inmeshtree,boundary_val=0):
     
     return idx_matrix,weight_matrix
 
-def find_triangle_KDtree(point,mesh,meshtree,max_tries=10):
+def find_triangle_KDtree(point,mesh,meshtree,max_tries=-1,maxr = 0):
+    if maxr > 0:
+        if np.sqrt(point[0]**2+point[1]**2)>maxr:
+            return -1
     tryno = 0
     if max_tries == -1:
         max_tries = mesh.points.shape[0]-1
@@ -750,11 +818,11 @@ def find_triangle_KDtree(point,mesh,meshtree,max_tries=10):
         return tri_idx
     return None
 
-def get_tri_idxs_KDtree(mesh,meshtree,xa,ya):
+def get_tri_idxs_KDtree(mesh,meshtree,xa,ya,maxr=0):
     tri_idxs = np.zeros((len(xa), len(ya)),dtype=int)
     for i in range(len(xa)):
         for j in range(len(ya)):
-            idx = find_triangle_KDtree([xa[i],ya[j]],mesh,meshtree) 
+            idx = find_triangle_KDtree([xa[i],ya[j]],mesh,meshtree,maxr=maxr) 
             tri_idxs[i][j] = idx if idx is not None else -1
     return tri_idxs
 

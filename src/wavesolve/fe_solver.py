@@ -2,14 +2,17 @@
 """
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.linalg import eigh
-from scipy.sparse.linalg import eigsh,lobpcg
-from scipy.sparse import csr_matrix,lil_matrix
-from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs
-from wavesolve.mesher import construct_meshtree,plot_mesh
-from wavesolve.shape_funcs import compute_dNdN, compute_NN
+from scipy.linalg import eigh,eig
+from scipy.sparse.linalg import eigsh,eigs,spsolve
+from scipy.sparse import lil_matrix
+from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs,get_linear_basis_funcs_affine,get_edge_linear_basis_funcs_affine
+from wavesolve.mesher import construct_meshtree
+from wavesolve.shape_funcs import *
+from wavesolve.waveguide import plot_mesh
 
-def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
+#region FEM matrices
+
+def construct_AB_order2(mesh,IOR_dict,k,sparse=False,poke_index = None):
     """ construct the A and B matrices corresponding to the given waveguide geometry.
     Args:
     mesh: the waveguide mesh, produced by wavesolve.mesher or pygmsh
@@ -53,7 +56,7 @@ def construct_AB(mesh,IOR_dict,k,sparse=False,poke_index = None):
 
     return A,B
 
-def construct_B(mesh,sparse=False):
+def construct_B_order2(mesh,sparse=False):
     """ construct only the B matrix ("mass matrix") corresponding to the given waveguide geometry. this is used for inner products.
     Args:
     mesh: the waveguide mesh, produced by wavesolve.mesher or pygmsh
@@ -80,55 +83,122 @@ def construct_B(mesh,sparse=False):
 
     return B
 
-def construct_AB_expl_IOR(mesh,IOR_arr,k):
-    from wavesolve.shape_funcs import compute_dNdN, compute_NN
-    
+def construct_AB_order1(mesh,IOR_dict,k,sparse=False):
     points = mesh.points
+    tris = mesh.cells[1].data 
     materials = mesh.cell_sets.keys()
 
     N = len(points)
+    if not sparse:
+        A = np.zeros((N,N))
+        B = np.zeros((N,N))
+    else:
+        A = lil_matrix((N,N))
+        B = lil_matrix((N,N))
 
-    A = np.zeros((N,N))
-    B = np.zeros((N,N))
-
-    for tri,IOR in zip(mesh.cells[1].data,IOR_arr):
-        tri_points = points[tri]
-        NN = compute_NN(tri_points)
-        dNdN = compute_dNdN(tri_points)
-        ix = np.ix_(tri,tri)
-        A[ix] += (k**2*IOR**2) * NN - dNdN
-        B[ix] += NN
-
-    return A,B
-
-# turns out... this isn't actually faster. lol. completely dominated by solving system, not generating matrix
-def construct_AB_fast(mesh,IOR_dict,k):
-    from wavesolve.shape_funcs import compute_dNdN_precomp, compute_J_and_mat, compute_NN_precomp
-    
-    points = mesh.points
-    verts = mesh.cells[1].data
-    materials = mesh.cell_sets.keys()
-
-    N = len(points)
-
-    A = np.zeros((N,N))
-    B = np.zeros((N,N))
-
-    IORs = np.zeros(N)
-    
     for material in materials:
-        IORs[tuple(mesh.cell_sets[material])] = IOR_dict[material]
+        tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
 
-    _Js,mat = compute_J_and_mat(points,verts)
+        for tri in tris:
+            tri_points = points[tri]
+            pc = precompute(tri_points,tri)
 
-    for _J,row,IOR,idxs in zip(_Js,mat,IORs,verts):
-        NN = compute_NN_precomp(_J)
-        dNdN = compute_dNdN_precomp(row)
-        ix = np.ix_(idxs,idxs)
-        A[ix] += k**2*IOR**2 * NN - dNdN
-        B[ix] += NN
+            NN = computeL_NN(precomp=pc)
+            dNdN = computeL_dNdN(precomp=pc)
 
+            ix = np.ix_(tri,tri)
+            A[ix] += (k**2*IOR_dict[material]**2) * NN - dNdN
+            B[ix] += NN
     return A,B
+
+def construct_AB(mesh,IOR_dict,k,sparse=False,order=2):
+    """ construct the generalized eigenvalue problem matrices for the SCALAR formulation of FEM
+    ARGS
+        mesh: the finite element mesh object
+        IOR_dict: dictionary of refractive index values corresponding to mesh
+        k: free space wavenumber
+        sparse: whether to return the matrices as sparse or dense; sparse is typically a better option for large meshes with ~>1000 nodes
+    """
+    if order == 2:
+        assert mesh.cells[1].data.shape[1] == 6, "must use order 2 mesh for order 2 solver."
+        return construct_AB_order2(mesh,IOR_dict,k,sparse)
+    elif order == 1:
+        assert mesh.cells[1].data.shape[1] == 3, "must use order 1 mesh for order 1 solver"
+        return construct_AB_order1(mesh,IOR_dict,k,sparse)
+    else:
+        raise NotImplementedError
+
+def construct_AB_vec(mesh,IOR_dict,k,sparse=False):
+    """construct generalized eigenvalue problem matrices for VECTOR formulation of FEM
+    ARGS
+        mesh: the finite element mesh object
+        IOR_dict: dictionary of refractive index values corresponding to mesh
+        k: free space wavenumber
+        sparse: whether to return the matrices as sparse or dense; sparse is typically a better option for large meshes with ~>1000 nodes
+    """
+    points = mesh.points
+    tris = mesh.cells[1].data 
+    materials = mesh.cell_sets.keys()
+    edges = mesh.cells[0].data # for this to work, need to update mesh with get_unique_edges()
+    Ntt = len(edges)
+    Nzz = len(points)
+    N = Ntt+Nzz
+    if not sparse:
+        Att = np.zeros((Ntt,Ntt))
+        A = np.zeros((N,N))
+        B = np.zeros((N,N))
+        Bzz = np.zeros((Nzz,Nzz))
+        Btz = np.zeros((Ntt,Nzz))
+        Btt = np.zeros((Ntt,Ntt))
+    else:
+        Att = lil_matrix((Ntt,Ntt))
+        A = lil_matrix((N,N))
+        B = lil_matrix((N,N))
+        Bzz = lil_matrix((Nzz,Nzz))
+        Btz = lil_matrix((Ntt,Nzz))
+        Btt = lil_matrix((Ntt,Ntt))
+
+    for material in materials:
+        tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
+        edge_indices = mesh.edge_indices[tuple(mesh.cell_sets[material])][0,:,0,:]
+        _k2 = (k**2*IOR_dict[material]**2)
+        for tri,idx in zip(tris,edge_indices):
+            tri_points = points[tri]
+            pc = precompute(tri_points,tri)
+
+            NeNe = computeL_Ne_Ne(precomp=pc)
+            NN = computeL_NN(precomp=pc)
+            dNdN = computeL_dNdN(precomp=pc)
+            NedN = computeL_Ne_dN(precomp=pc)
+            cdNcdN = computeL_curlNe_curlNe(precomp=pc)
+
+            ixtt = np.ix_(idx,idx)
+            ixtz = np.ix_(idx,tri)
+            ixzz = np.ix_(tri,tri)
+
+            Att[ixtt] += _k2 * NeNe - cdNcdN
+            Btt[ixtt] += NeNe
+            Btz[ixtz] += NedN
+            Bzz[ixzz] += dNdN - _k2*NN
+    
+    _ixtt = np.ix_(range(Ntt),range(Ntt))
+    _ixtz = np.ix_(range(Ntt),range(Ntt,Ntt+Nzz))
+    _ixzt = np.ix_(range(Ntt,Ntt+Nzz),range(Ntt))
+    _ixzz = np.ix_(range(Ntt,Ntt+Nzz),range(Ntt,Ntt+Nzz))
+
+    A[_ixtt] += Att
+    B[_ixtt] += Btt
+    B[_ixtz] += Btz
+    B[_ixzt] += Btz.transpose()
+    B[_ixzz] += Bzz
+
+    if sparse:
+        return A.tocsc(),B.tocsc()
+    return A,B
+
+#endregion
+
+#region FEM solving
 
 def solve(A,B,mesh,k,IOR_dict,plot=False):
     """ Given the A,B matrices, solve the general eigenvalue problem A v = w B v
@@ -202,9 +272,9 @@ def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
 
     return w[::-1],v.T[::-1],mode_count
 
-def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=False,Nmax=10):
-    """ given a mesh, propagation wavelength, and refractive index dictionary, solve for modes. this has the same functionality
-        as running construct_AB() and solve() 
+def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10,order=2):
+    """ given a mesh, propagation wavelength, and refractive index dictionary, solve for the SCALAR modes. 
+        this has the same functionality as running construct_AB() and solve(). 
     
     ARGS: 
         mesh: mesh object corresponding to waveguide geometry
@@ -214,6 +284,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
         ignore_warning: bypass the warning raised when the mesh becomes too large to solve safely with scipy.linalg.eigh()
         sparse: set True to use a sparse solver, which is can handle larger meshes but is slower
         Nmax: return only the <Nmax> largest eigenvalue/eigenvector pairs
+        order: the order of the triangular finite elements. can be 1 (linear) or 2 (quadratic) ; default 2
     RETURNS:
         w: array of eigenvalues, descending order
         v: array of corresponding eigenvectors (waveguide modes)
@@ -222,8 +293,8 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
     
     k = 2*np.pi/wl
     est_eigval = np.power(k*max(IOR_dict.values()),2)
-
-    A,B = construct_AB(mesh,IOR_dict,k,sparse=sparse)
+    
+    A,B = construct_AB(mesh,IOR_dict,k,sparse=sparse,order=order)
     N = A.shape[0]
 
     if A.shape[0]>2000 and not ignore_warning and not sparse:
@@ -247,7 +318,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
             if not (nmin <= ne <= nmax):
                 print("warning: spurious mode! stopping plotting ... ")
             print("effective index: ",get_eff_index(wl,_w))
-            plot_eigenvector(mesh,_v)
+            plot_scalar_mode(mesh,_v)
         if (nmin <= ne <= nmax):
             mode_count+=1
         else:
@@ -255,24 +326,70 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=Fals
 
     return w[::-1],v.T[::-1],mode_count
 
+def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10):
+    """ given a mesh, propagation wavelength, and refractive index dictionary, solve for VECTOR modes, using linear triangles (order 1).
+    
+    ARGS: 
+        mesh: mesh object corresponding to waveguide geometry
+        wl: wavelength, defined in the same units as mesh point positions
+        IOR_dict: a dictionary assigning different named regions of the mesh different refractive index values
+        plot: set True to view eigenmodes
+        ignore_warning: bypass the warning raised when the mesh becomes too large to solve safely with scipy.linalg.eigh()
+        sparse: set True to use a sparse solver, which is can handle larger meshes but is slower
+        Nmax: return only the <Nmax> largest eigenvalue/eigenvector pairs
+    RETURNS:
+        w: array of eigenvalues, descending order
+        v: array of corresponding eigenvectors (waveguide modes)
+        N: number non-spurious (i.e. propagating) waveguide modes
+    """
+    
+    assert mesh.cells[1].data.shape[1] == 3, "must use order 1 mesh for vectorial solver"
+
+    k = 2*np.pi/wl
+    est_eigval = np.power(k*max(IOR_dict.values()),2)
+
+    A,B = construct_AB_vec(mesh,IOR_dict,k,sparse=sparse)
+    N = A.shape[0]
+
+    if A.shape[0]>2000 and not ignore_warning and not sparse:
+        raise Exception("A and B matrices are larger than 2000 x 2000 - this may make your system unstable. consider setting sparse=True")
+    if not sparse:
+        _w,_v = eig(A,B,overwrite_a=True,overwrite_b=True)
+        inds = _w.argsort()[::-1]
+        w = _w[inds][:Nmax]
+        v = _v[:,inds][:,:Nmax]
+    else:
+        C = spsolve(B,A)
+        w,v = eigs(C,k=Nmax,which='SR',sigma=est_eigval)
+
+    IORs = [ior[1] for ior in IOR_dict.items()]
+    nmin,nmax = min(IORs) , max(IORs)
+    mode_count = 0
+    
+    for _w,_v in zip(w,v.T):
+        if _w<0:
+            continue
+        ne = np.sqrt(_w/k**2)
+        if plot:
+            if not (nmin <= ne <= nmax):
+                print("warning: spurious mode! stopping plotting ... ")
+            print("effective index: ",get_eff_index(wl,_w))
+            plot_vector_mode(mesh,_v)
+        if (nmin <= ne <= nmax):
+            mode_count+=1
+        else:
+            break
+
+    return w,v.T,mode_count
+
+#endregion
+
+#region misc
+
 def get_eff_index(wl,w):
     """ get effective index from wavelength wl and eigenvlaue w """
     k = 2*np.pi/wl
     return np.sqrt(w/k**2)
-
-def plot_eigenvector(mesh,v,show_mesh = False,ax=None,show=True):
-    points = mesh.points
-    if ax is None:
-        fig,ax = plt.subplots(figsize=(5,5))
-    
-    ax.set_aspect('equal')
-    im = ax.tricontourf(points[:,0],points[:,1],v,levels=60)
-    
-    if show_mesh:
-        plot_mesh(mesh,show=False,ax=ax)
-    if show:
-        plt.show()
-    return im
 
 def compute_diff(tri_idx,mesh,_pinv):
     from wavesolve.shape_funcs import compute_NN
@@ -325,12 +442,6 @@ def optimize_for_mode_structure(mesh,IOR_dict,k,target_field,iterations = 1):
         IOR0 = compute_IOR_arr(mesh,IOR_dict)
         IOR = np.sqrt(np.power(IOR0,2)*k**2-coeffs)/k
 
-        # check the new results
-        A,B = construct_AB_expl_IOR(mesh,IOR,k)
-        w,v = solve(A,B,mesh,k,IOR_dict)
-
-    # plot the result
-    #plot_eigenvector(IOR)
     from mesher import plot_mesh_expl_IOR
     plot_mesh_expl_IOR(mesh,IOR)
 
@@ -348,6 +459,94 @@ def optimize_for_mode_structure(mesh,IOR_dict,k,target_field,iterations = 1):
     plt.tricontourf(xcs,ycs,IOR,levels=40)
     plt.colorbar()
     plt.show()
+
+#endregion
+    
+#region plotting
+    
+def plot_eigenvector(mesh,v,show_mesh = False,ax=None,show=True):
+    print("deprecated - switch to plot_scalar_mode() or plot_vector_mode()")
+    points = mesh.points
+    if ax is None:
+        fig,ax = plt.subplots(figsize=(5,5))
+    
+    ax.set_aspect('equal')
+    im = ax.tricontourf(points[:,0],points[:,1],v,levels=60)
+    
+    if show_mesh:
+        plot_mesh(mesh,show=False,ax=ax)
+    if show:
+        plt.show()
+    return im
+
+def plot_scalar_mode(mesh,v,show_mesh=False,ax=None):
+    """ plot a scalar eigenmode 
+    ARGS
+        mesh: finite element mesh
+        v: an array (column vector) corresponding to an eigenmode
+        show_mesh: set True to additionally plot the mesh geometry
+        ax: optionally put the plot on a specific matplotlib axis
+    """
+    points = mesh.points
+    show=False
+    if ax is None:
+        show=True
+        fig,ax = plt.subplots(figsize=(5,5))
+    
+    ax.set_aspect('equal')
+    im = ax.tricontourf(points[:,0],points[:,1],v,levels=60)
+    
+    if show_mesh:
+        plot_mesh(mesh,show=False,ax=ax)
+    if show:
+        plt.show()
+    return im    
+
+def plot_vector_mode(mesh,v,show_mesh=False,ax=None):
+    """ plot a scalar eigenmode 
+    ARGS
+        mesh: finite element mesh
+        v: an array (column vector) corresponding to an eigenmode
+        show_mesh: set True to additionally plot the mesh geometry
+        ax: optionally put the plot on a specific matplotlib axis
+        arrow_scale: factor for rescaling arrow sizes in the quiver plot
+    """
+    tris = mesh.cells[1].data
+
+    edge_inds = mesh.edge_indices
+    show = False
+    if ax is None:
+        fig,ax = plt.subplots(1,1)
+        ax.set_aspect('equal')
+        show = True
+
+    amps = []
+    vecs = []
+    xps = []
+    yps = []
+
+    for tri,edge in zip(tris,edge_inds):
+        tripoints = mesh.points[tri]
+        centroid = np.mean(tripoints,axis=0)
+
+        vec = LNe0(centroid,tripoints,tri)*v[edge[0]] + LNe1(centroid,tripoints,tri)*v[edge[1]] +LNe2(centroid,tripoints,tri)*v[edge[2]]
+        amps.append(np.linalg.norm(vec))
+        vecs.append(vec)
+        xps.append(centroid[0])
+        yps.append(centroid[1])
+
+    vecs = np.array(vecs)
+
+    ax.tricontourf(xps,yps,amps,levels=60)
+    ax.quiver(xps,yps,vecs[:,0],vecs[:,1],color='white')
+    if show_mesh:
+        plot_mesh(mesh,show=False,ax=ax)
+    if show:
+        plt.show()
+
+#endregion
+
+#region field evaluation
 
 def det(u,v):
     return u[0]*v[1] - u[1]*v[0]
@@ -425,25 +624,57 @@ def get_tri_idxs(mesh,xa,ya):
             tri_idxs[i][j] = idx if idx is not None else -1
     return tri_idxs
 
-def get_interp_weights(mesh,xa,ya,tri_idxs):
-    weights = np.zeros((len(xa),len(ya),6))
+def get_interp_weights(mesh,xa,ya,tri_idxs,order=2):
+    assert order in [1,2], "order must be 1 or 2, corresponding to mesh element order"
+
+    if order==2:
+        N = 6
+    else:
+        N = 3
+
+    weights = np.zeros((len(xa),len(ya),N))
+
     points = mesh.points
     tris = mesh.cells[1].data
 
     for i in range(len(xa)):
         for j in range(len(ya)):
-            for k in range(6):
+            for k in range(N):
                 if tri_idxs[i,j]==-1:
                     weights[i,j,k] = np.nan
                     continue
                 gridpoint = [xa[i],ya[j]]
                 vertices = points[tris[tri_idxs[i,j]]][:,:2]
                 gridpoint_uv = affine_transform(vertices)(gridpoint)
-                weights[i,j,k] = get_basis_funcs_affine()[k](gridpoint_uv[0], gridpoint_uv[1])
+                if order==2:
+                    weights[i,j,k] = get_basis_funcs_affine()[k](gridpoint_uv[0], gridpoint_uv[1])
+                else:
+                    weights[i,j,k] = get_linear_basis_funcs_affine()[k](gridpoint_uv[0], gridpoint_uv[1])
     return weights
 
-def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None):
-    """ interpolates eigenvector v, computed on mesh, onto rectangular grid defined by 1D arrays xa and ya.
+def get_interp_weights_vec(mesh,xa,ya,tri_idxs):
+    N = 3
+    weights = np.zeros((len(xa),len(ya),N,2)) # weights are vectorial; list dim stores (x,y) component
+
+    points = mesh.points
+    tris = mesh.cells[1].data
+
+    for i in range(len(xa)):
+        for j in range(len(ya)):
+            for k in range(N):
+                tri = tri_idxs[i,j]
+                if tri==-1:
+                    weights[i,j,k] = np.nan
+                    continue
+                
+                gridpoint = [xa[i],ya[j]]
+                vertices = points[tris[tri]][:,:2]
+
+                weights[i,j,k,:] = get_edge_linear_basis_funcs_affine()[k](gridpoint,vertices,mesh.cells[1].data[tri])
+    return weights
+
+def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None,order=2,maxr=0):
+    """ interpolates SCALAR eigenmode v, computed on mesh, onto rectangular grid defined by 1D arrays xa and ya.
     ARGS:
         v: eigenvector to interpolate 
         mesh: mesh object corresponding to waveguide geometry
@@ -451,6 +682,9 @@ def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None
         ya: 1D array of y points for output grid
         tri_idxs: an array of indices. the first index corresponds to the first triangle containing the first mesh point, etc.
         interp_weights: interpolation weights. these are multiplied against v and summed to get the interpolated field
+        mesh_tree: a KDtree representing the mesh triangles. if None, one will be made with construct_meshtree(mesh)
+        order: the order of the finite element mesh
+        maxr: points more than this distance from the origin are ignored. if 0, all points are assumed to lie inside the mesh
     RETURNS:
         the mode v interpolated over the rectangular grid (xa,ya)
     """
@@ -458,13 +692,43 @@ def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None
     if meshtree is None:
         meshtree = construct_meshtree(mesh)
 
-    tri_idxs = get_tri_idxs_KDtree(mesh,meshtree,xa,ya) if tri_idxs is None else tri_idxs
-    interp_weights = get_interp_weights(mesh,xa,ya,tri_idxs) if interp_weights is None else interp_weights
+    tri_idxs = get_tri_idxs_KDtree(mesh,meshtree,xa,ya,maxr=maxr) if tri_idxs is None else tri_idxs
+    interp_weights = get_interp_weights(mesh,xa,ya,tri_idxs,order=order) if interp_weights is None else interp_weights
 
     tris = mesh.cells[1].data
     field_points = v[tris[tri_idxs]]
 
     return np.sum(field_points*interp_weights,axis=2)
+
+def interpolate_vec(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None,maxr=0):
+    """ interpolates the VECTOR eigenmode v, computed on mesh, onto rectangular grid defined by 1D arrays xa and ya.
+    ARGS:
+        v: eigenvector to interpolate 
+        mesh: mesh object corresponding to waveguide geometry
+        xa: 1D array of x points for output grid
+        ya: 1D array of y points for output grid
+        tri_idxs: an array of indices. the first index corresponds to the first triangle containing the first mesh point, etc.
+        interp_weights: interpolation weights. these are multiplied against v and summed to get the interpolated field
+        mesh_tree: a KDtree representing the mesh triangles. if None, one will be made with construct_meshtree(mesh)
+        order: the order of the finite element mesh
+        maxr: points more than this distance from the origin are ignored. if 0, all points are assumed to lie inside the mesh
+    RETURNS:
+        the mode v interpolated over the rectangular grid (xa,ya)
+    """
+    edge_indices = mesh.edge_indices
+    edges = mesh.cells[0].data # for this to work, need to update mesh with get_unique_edges()
+    Ntt = len(edges)
+    vtt = v[:Ntt]
+
+    if meshtree is None:
+        meshtree = construct_meshtree(mesh)
+
+    tri_idxs = get_tri_idxs_KDtree(mesh,meshtree,xa,ya,maxr=maxr) if tri_idxs is None else tri_idxs
+    interp_weights = get_interp_weights_vec(mesh,xa,ya,tri_idxs) if interp_weights is None else interp_weights
+
+    field_points = vtt[edge_indices[tri_idxs]]
+
+    return np.sum(field_points[:,:,:,None]*interp_weights,axis=2)
 
 def unstructured_interpolate(v,inmesh,point,inmeshtree=None,max_tries = 10):
     """ interpolate the field v evaluated on the points of inmesh to compute the value at an arbitrary [x,y] point. 
@@ -537,9 +801,11 @@ def get_mesh_interpolate_matrices(inmesh,outmesh,inmeshtree,boundary_val=0):
             weight_matrix[i,:] = boundary_val
     
     return idx_matrix,weight_matrix
-        
 
-def find_triangle_KDtree(point,mesh,meshtree,max_tries=10):
+def find_triangle_KDtree(point,mesh,meshtree,max_tries=-1,maxr = 0):
+    if maxr > 0:
+        if np.sqrt(point[0]**2+point[1]**2)>maxr:
+            return -1
     tryno = 0
     if max_tries == -1:
         max_tries = mesh.points.shape[0]-1
@@ -553,10 +819,12 @@ def find_triangle_KDtree(point,mesh,meshtree,max_tries=10):
         return tri_idx
     return None
 
-def get_tri_idxs_KDtree(mesh,meshtree,xa,ya):
+def get_tri_idxs_KDtree(mesh,meshtree,xa,ya,maxr=0):
     tri_idxs = np.zeros((len(xa), len(ya)),dtype=int)
     for i in range(len(xa)):
         for j in range(len(ya)):
-            idx = find_triangle_KDtree([xa[i],ya[j]],mesh,meshtree) 
+            idx = find_triangle_KDtree([xa[i],ya[j]],mesh,meshtree,maxr=maxr) 
             tri_idxs[i][j] = idx if idx is not None else -1
     return tri_idxs
+
+#endregion

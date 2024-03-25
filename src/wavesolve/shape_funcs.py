@@ -227,5 +227,147 @@ def compute_J(vertices):
     _J = x21*y31-x31*y21
     return _J   
 
+### linear triangle elements ###
 
+LN0 = lambda u,v: 1 - u - v
+LN1 = lambda u,v: u
+LN2 = lambda u,v: v 
+
+def get_linear_basis_funcs_affine():
+    """ returns 3 functions correpsonding to the 3 nodes in an LT element."""
+    return [LN0,LN1,LN2]
+
+dLN0du = -1
+dLN0dv = -1
+dLN1du = 1
+dLN1dv = 0
+dLN2du = 0
+dLN2dv = 1
+
+# shape functions for edges
+# edge 0 = point 0 -> point 1, etc.
+
+#LNe0 = lambda u,v: np.array([1-v,u]) #(LN0(u,v)*dLN1du - LN1(u,v)*dLN0du , LN0(u,v)*dLN1dv - LN1(u,v)*dLN0dv)
+#LNe1 = lambda u,v: np.array([-np.sqrt(2)*v,np.sqrt(2)*u]) #((LN1(u,v)*dLN2du - LN2(u,v)*dLN1du)*np.sqrt(2) , (LN1(u,v)*dLN2dv - LN2(u,v)*dLN1dv)*np.sqrt(2)) # sqrt(2) * (-v,u)
+#LNe2 = lambda u,v: np.array([-v,-1+u]) # (LN2(u,v)*dLN0du - LN0(u,v)*dLN2du , LN2(u,v)*dLN0dv - LN0(u,v)*dLN2dv)
+
+def precompute(tri,tri_idx):
+    x21 = tri[1,0] - tri[0,0]
+    y21 = tri[1,1] - tri[0,1]
+    x31 = tri[2,0] - tri[0,0]
+    y31 = tri[2,1] - tri[0,1]
+    x32 = tri[2,0] - tri[1,0]
+    y32 = tri[2,1] - tri[1,1]
+    s1 = 1 if tri_idx[0]<tri_idx[1] else -1
+    s2 = 1 if tri_idx[1]<tri_idx[2] else -1
+    s3 = 1 if tri_idx[2]<tri_idx[0] else -1
+    l12 = np.sqrt(x21*x21+y21*y21)*s1 
+    l23 = np.sqrt(x32*x32+y32*y32)*s2
+    l31 = np.sqrt(x31*x31+y31*y31)*s3
+    _J = x21*y31 - x31*y21
+
+    return (x21,y21,x31,y31,x31,y31,l12,l23,l31,_J)
+
+### vector basis functions for linear triangles ###
+### reference: https://ieeexplore.ieee.org/document/5628380
+## the below was computed through sympy ##
+
+def LNe0(p,tri,tri_idx):
+    x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
+    x1,y1 = tri[0,0],tri[0,1]
+    x,y = p[0],p[1]
+    xv = (-y + y31 + y1)/_J*l12
+    yv = (x - x31 - x1)/_J*l12
+    return np.array([xv,yv])
+
+def LNe1(p,tri,tri_idx):
+    x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
+    x1,y1 = tri[0,0],tri[0,1]
+    x,y = p[0],p[1]
+    xv = (-y + y1)/_J*l23
+    yv = (x - x1)/_J*l23
+    return np.array([xv,yv])
+
+def LNe2(p,tri,tri_idx):
+    x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
+    x1,y1 = tri[0,0],tri[0,1]
+    x,y = p[0],p[1]
+    xv = (-y + y21 + y1)/_J*l31
+    yv = (x - x21 - x1)/_J*l31
+    return np.array([xv,yv])
+
+def get_edge_linear_basis_funcs_affine():
+    """ returns 3 vector-valued functions correpsonding to the 3 edges in an LT element."""
+    return [LNe0,LNe1,LNe2]
+
+def computeL_Ne_Ne(tri=None,tri_idx=None,precomp=None): # nenenene
+    """ integral of LNe_i LNe_j over triangle tri """
+    out = np.zeros((3,3),dtype=np.float64)
+
+    if precomp is None:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
+    else:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
+    
+    # edge order is 12 , 23, 31 
+    out[0,0] = l12**2 * (l12**2-3*x21*x31+3*l31**2-3*y21*y31)/(12*_J)
+    out[1,1] = l23**2 * (l12**2 + x21*x31 + l31**2 + y21*y31)/(12*_J)
+    out[2,2] = l31**2 * (3*l12**2-3*x21*x31+l31**2-3*y21*y31)/(12*_J)
+    out[0,1] = out[1,0] = l12*l23 * (l12**2-x21*x31-l31**2-y21*y31)/(12*_J)
+    out[1,2] = out[2,1] = l23*l31 * (-l12**2-x21*x31+l31**2-y21*y31)/(12*_J)
+    out[2,0] = out[0,2] = l31*l12 * (-l12**2+3*x21*x31-l31**2+3*y21*y31)/(12*_J)
+    return out
+
+def computeL_curlNe_curlNe(tri=None,tri_idx=None,precomp=None):
+    if precomp is None:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
+    else:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
+    ls = np.array([l12,l23,l31])
+    return 2/_J * ls[:,None]*ls[None,:]
+
+def computeL_Ne_dN(tri=None,tri_idx=None,precomp=None):
+    """ integral of Ne_i and dN_j """
+    out = np.zeros((3,3),dtype=np.float64)
+    if precomp is None:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
+    else:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
+
+    out[0,0] = l12*(-l12**2 + 3*x21*x31-2*l31**2+3*y21*y31)/(6*_J)
+    out[1,1] = l23*(-x21*x31-l31**2-y21*y31)/(6*_J)
+    out[2,2] = l31*(-2*l12**2+x21*x31+y21*y31)/(6*_J)
+    out[0,1] = l12*(-x21*x31+2*l31**2-y21*y31)/(6*_J)
+    out[1,0] = l23*(-l12**2+l31**2)/(6*_J)
+    out[1,2] = l23*(l12**2+x21*x31+y21*y31)/(6*_J)
+    out[2,1] = l31*(2*x21*x31+2*y21*y31-l31**2)/(6*_J)
+    out[2,0] = l31*(2*l12**2-3*x21*x31+l31**2-3*y21*y31)/(6*_J)
+    out[0,2] = l12*(l12**2-2*x21*x31-2*y21*y31)/(6*_J)
+    return out
+
+def computeL_NN(tri=None,tri_idx=None,precomp=None):
+    out = np.zeros((3,3),dtype=np.float64)
+    if precomp is None:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
+    else:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
+    out[:] = _J/24
+    out[0,0] = out[1,1] = out[2,2] = _J/12
+    return out
+
+def computeL_dNdN(tri=None,tri_idx=None,precomp=None):
+    out = np.zeros((3,3),dtype=np.float64)
+    if precomp is None:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precompute(tri,tri_idx)
+    else:
+        x21,y21,x31,y31,x31,y31,l12,l23,l31,_J = precomp
+
+    out[0,0] = (l12**2+l31**2-2*x21*x31-2*y21*y31)/(2*_J)
+    out[1,1] = l31**2/(2*_J)
+    out[2,2] = l12**2/(2*_J)
+    out[0,1] = out[1,0] = (-l31**2+x21*x31+y21*y31)/(2*_J)
+    out[1,2] = out[2,1] = (-x21*x31-y21*y31)/(2*_J)
+    out[2,0] = out[0,2] = (-l12**2+x21*x31+y21*y31)/(2*_J)
+
+    return out
 

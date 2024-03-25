@@ -95,7 +95,7 @@ def plot_mesh_expl_IOR(mesh,IORs,show=True,ax=None,verts=3,alpha=0.2):
     if show:
         plt.show()
 
-def fiber_mesh(r_clad,r_core,res,mode="tri"):
+def fiber_mesh(r_clad,r_core,res,mode="tri",order=2):
     with pygmsh.occ.Geometry() as geom:
         cladding_base = geom.add_polygon(circ_points(r_clad,int(res/2)))
         core = geom.add_polygon(circ_points(r_core,int(res)))
@@ -107,7 +107,8 @@ def fiber_mesh(r_clad,r_core,res,mode="tri"):
         algo = 6
         if mode=="quad":
             algo = 11
-        mesh = geom.generate_mesh(dim=2,order=2,algorithm=algo)
+        geom.env.removeAllDuplicates()
+        mesh = geom.generate_mesh(dim=2,order=order,algorithm=algo)
         mesh.cell_data["radius"] = r_core
         return mesh
 
@@ -237,3 +238,29 @@ def construct_meshtree(mesh):
     tris = mesh.cells[1].data
     cntrs = np.mean(mesh.points[tris][:,:3,:2],axis=1)
     return KDTree(cntrs)
+
+def get_unique_edges(mesh,mutate=True):
+    """ get set of unique edges in mesh """
+    tris = mesh.cells[1].data
+    
+    unique_edges = list()
+    edge_indices = np.zeros_like(tris)
+
+    i = 0
+    for j,tri in enumerate(tris):
+        e0 = sorted([tri[0],tri[1]])
+        e1 = sorted([tri[1],tri[2]])
+        e2 = sorted([tri[2],tri[0]])
+        es= [e0,e1,e2]
+        for k,e in enumerate(es):
+            if e not in unique_edges:
+                unique_edges.append(e)
+                edge_indices[j,k] = i
+                i += 1
+            else:
+                edge_indices[j,k] = unique_edges.index(e)
+    out = np.array(unique_edges)
+    if mutate:
+        mesh.cells[0].data = out
+        mesh.edge_indices = edge_indices
+    return out,edge_indices

@@ -558,13 +558,11 @@ class CircularFiber(Waveguide):
             clad_res = int(core_res/2)
         core = Circle(ncore,"core")
         core.make_points(rcore,core_res)
-        if core_mesh_size is not None:
-            core.mesh_size = core_mesh_size
+        core.mesh_size = core_mesh_size
 
         cladding = Circle(nclad,"cladding")
         cladding.make_points(rclad,clad_res)
-        if clad_mesh_size is not None:
-            cladding.mesh_size = clad_mesh_size
+        cladding.mesh_size = clad_mesh_size
         super().__init__([cladding,core])
 
 class EllipticalFiber(Waveguide):
@@ -584,12 +582,59 @@ class EllipticalFiber(Waveguide):
             clad_res = int(core_res/2)
         core = Ellipse(ncore,"core")
         core.make_points(acore,bcore,core_res)
-        if core_mesh_size is not None:
-            core.mesh_size = core_mesh_size
+        core.mesh_size = core_mesh_size
         cladding = Circle(nclad,"cladding")
         cladding.make_points(rclad,clad_res)
-        if clad_mesh_size is not None:
-            cladding.mesh_size = clad_mesh_size
+        cladding.mesh_size = clad_mesh_size
         super().__init__([cladding,core])
+
+class PhotonicCrystalFiber(Waveguide):
+    """ an optical fiber filled with a hexagonal pattern of air holes, except at the center.
+    ARGS:
+        rhole: the radius of each air hole perforating the fiber
+        rclad: the outer cladding radius of the fiber
+        nclad: the index of the cladding material
+        spacing: the physical spacing between holes
+        hole_res: the # of line segments used to resolve each hole boundary
+        clad_res: the # of line segments used to resolve the outer cladding boundary
+        hole_mesh_size: (opt.) target mesh size inside holes
+        clad_mesh_size: (opt.) target mesh size inside cladding, but outside holes
+        nhole: (opt.) index of the holes, default 1.
+        rcore: (opt.) the "core radius" of the fiber. holes whose centers are within this radius from the origin are not generated. default 0 (no central hole).
+    """
+
+    def __init__(self,rhole,rclad,nclad,spacing,hole_res,clad_res,hole_mesh_size=None,clad_mesh_size=None,nhole=1.,rcore=0):
+        
+        # get air hole positions
+        layers = int(rclad/spacing)
+        xa = ya = np.linspace(-layers*spacing,layers*spacing,2*layers+1,endpoint=True)
+        xg , yg = np.meshgrid(xa,ya)
+
+        yg *= np.sqrt(3)/2
+        if layers%2==1:
+            xg[::2, :] += 0.5 * spacing
+        else:
+            xg[1::2, :] += 0.5 * spacing
+
+        rg = np.sqrt(xg*xg + yg*yg)
+        xhole , yhole = xg[rg < rclad].flatten() , yg[rg < rclad].flatten()
+
+        # make holes
+        holes = []
+        for xh,yh in zip(xhole,yhole):
+            if xh*xh+yh*yh <= rcore*rcore:
+                continue
+            hole = Circle(nhole,"hole")
+            hole.make_points(rhole,hole_res,(xh,yh))
+            hole.mesh_size = hole_mesh_size
+            holes.append(hole)
+
+        # make cladding
+        cladding = Circle(nclad,"cladding")
+        cladding.make_points(rclad,clad_res)
+        cladding.mesh_size = clad_mesh_size
+
+        super().__init__([cladding,holes])
+
 
 #endregion

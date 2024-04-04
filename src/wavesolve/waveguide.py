@@ -589,21 +589,21 @@ class EllipticalFiber(Waveguide):
         super().__init__([cladding,core])
 
 class PhotonicCrystalFiber(Waveguide):
-    """ an optical fiber filled with a hexagonal pattern of air holes, except at the center.
-    ARGS:
-        rhole: the radius of each air hole perforating the fiber
-        rclad: the outer cladding radius of the fiber
-        nclad: the index of the cladding material
-        spacing: the physical spacing between holes
-        hole_res: the # of line segments used to resolve each hole boundary
-        clad_res: the # of line segments used to resolve the outer cladding boundary
-        hole_mesh_size: (opt.) target mesh size inside holes
-        clad_mesh_size: (opt.) target mesh size inside cladding, but outside holes
-        nhole: (opt.) index of the holes, default 1.
-        rcore: (opt.) the "core radius" of the fiber. holes whose centers are within this radius from the origin are not generated. default 0 (no central hole).
-    """
-
+    """ an optical fiber filled with a hexagonal pattern of air holes, except at the center. must be solved with vector solver. """
     def __init__(self,rhole,rclad,nclad,spacing,hole_res,clad_res,hole_mesh_size=None,clad_mesh_size=None,nhole=1.,rcore=0):
+        """
+        ARGS:
+            rhole: the radius of each air hole perforating the fiber
+            rclad: the outer cladding radius of the fiber
+            nclad: the index of the cladding material
+            spacing: the physical spacing between holes
+            hole_res: the # of line segments used to resolve each hole boundary
+            clad_res: the # of line segments used to resolve the outer cladding boundary
+            hole_mesh_size: (opt.) target mesh size inside holes
+            clad_mesh_size: (opt.) target mesh size inside cladding, but outside holes
+            nhole: (opt.) index of the holes, default 1.
+            rcore: (opt.) the "core radius" of the fiber. holes whose centers are within this radius from the origin are not generated. default 0 (no central hole).
+        """    
         
         # get air hole positions
         layers = int(rclad/spacing)

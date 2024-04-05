@@ -378,7 +378,7 @@ class Waveguide:
             # diff the polygons
             for i in range(0,len(self.prim2Dgroups)-1):
                 polys = polygons[i]
-                for j in range(i+1,len(self.prim2Dgroups)-1):
+                for j in range(i+1,len(self.prim2Dgroups)):
                     _polys = polygons[j]
                     polys = geom.boolean_difference(polys,_polys,delete_other=False,delete_first=True)
             

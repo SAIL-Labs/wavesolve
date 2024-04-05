@@ -376,11 +376,19 @@ class Waveguide:
                     polygons.append(els)
 
             # diff the polygons
+            for i in range(len(self.prim2Dgroups)-2,-1,-1):
+                polys = polygons[i]
+                for j in range(len(self.prim2Dgroups)-1,i,-1):
+                    _polys = polygons[j]
+                    polys = geom.boolean_difference(polys,_polys,delete_other=False,delete_first=True)
+            """
+            # diff the polygons
             for i in range(0,len(self.prim2Dgroups)-1):
                 polys = polygons[i]
                 for j in range(i+1,len(self.prim2Dgroups)):
                     _polys = polygons[j]
                     polys = geom.boolean_difference(polys,_polys,delete_other=False,delete_first=True)
+            """
             
             for i,el in enumerate(polygons):
                 if type(el) == list:

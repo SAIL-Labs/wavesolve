@@ -392,7 +392,7 @@ class Waveguide:
                         geom.add_physical(gr,l)
                 else:
                     geom.add_physical(el,self.prim2Dgroups[i].label)
-
+            geom.env.removeAllDuplicates()
             mesh = geom.generate_mesh(dim=2,order=order,algorithm=algo)
             get_unique_edges(mesh)
             return mesh
@@ -635,6 +635,56 @@ class PhotonicCrystalFiber(Waveguide):
         cladding.mesh_size = clad_mesh_size
 
         super().__init__([cladding,holes])
+
+class PhotonicBandgapFiber(Waveguide):
+    """ a photonic crystal fiber with a hollow core, which guides modes via bandgap, not index guiding """
+    def __init__(self,rhole,rcore,rclad,nclad,spacing,hole_res,clad_res,hole_mesh_size=None,clad_mesh_size=None,nhole=1.):
+        """
+        ARGS:
+            rhole: the radius of each air hole perforating the fiber
+            rclad: the outer cladding radius of the fiber
+            nclad: the index of the cladding material
+            spacing: the physical spacing between holes
+            hole_res: the # of line segments used to resolve each hole boundary
+            clad_res: the # of line segments used to resolve the outer cladding boundary
+            hole_mesh_size: (opt.) target mesh size inside holes
+            clad_mesh_size: (opt.) target mesh size inside cladding, but outside holes
+            nhole: (opt.) index of the holes, default 1.
+            rcore: (opt.) the "core radius" of the fiber. holes whose centers are within this radius from the origin are not generated. default 0 (no central hole).
+        """    
+        
+        # get air hole positions
+        layers = int(rclad/spacing)
+        xa = ya = np.linspace(-layers*spacing,layers*spacing,2*layers+1,endpoint=True)
+        xg , yg = np.meshgrid(xa,ya)
+
+        yg *= np.sqrt(3)/2
+        if layers%2==1:
+            xg[::2, :] += 0.5 * spacing
+        else:
+            xg[1::2, :] += 0.5 * spacing
+
+        rg = np.sqrt(xg*xg + yg*yg)
+        xhole , yhole = xg[rg < rclad].flatten() , yg[rg < rclad].flatten()
+
+        # make holes
+        holes = []
+        for xh,yh in zip(xhole,yhole):
+            hole = Circle(nhole,"hole")
+            hole.make_points(rhole,hole_res,(xh,yh))
+            hole.mesh_size = hole_mesh_size
+            holes.append(hole)
+
+        # make cladding
+        cladding = Circle(nclad,"cladding")
+        cladding.make_points(rclad,clad_res)
+        cladding.mesh_size = clad_mesh_size
+
+        # central hole
+        center_hole = Circle(nhole,"center_hole")
+        center_hole.make_points(rcore,hole_res*int(rcore/rhole))
+
+        super().__init__([cladding,holes,center_hole])
 
 
 #endregion

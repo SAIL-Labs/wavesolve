@@ -275,6 +275,7 @@ class Rectangle(Prim2D):
         points = np.array([[xmin,ymin],[xmax,ymin],[xmax,ymax],[xmin,ymax]])
         self.bounds = [xmin,xmax,ymin,ymax]
         self.points = points
+        self.center = [(xmin+xmax)/2,(ymin+ymax)/2]
         return points
 
     def boundary_dist(self, x, y):
@@ -305,20 +306,73 @@ class Ellipse(Prim2D):
         return ellipse_dist(self.a,self.b,self.center,[x,y])
 
 class Prim2DUnion(Prim2D):
-    def __init__(self,p1:Prim2D,p2:Prim2D):
-        assert p1.n == p2.n, "primitives must have the same refractive index"
-        super().__init__(p1.n,np.array([p1.points,p2.points]))
-        self.p1 = p1
-        self.p2 = p2
+    """ a union of Prim2Ds """
+    def __init__(self,ps:list[Prim2D],label):
+        ns = [p.n for p in ps]
+        assert np.all(np.array(ns)==ns[0]),"primitives must have the same refractive index"
+        points = [p.points for p in ps]
+        super().__init__(ps[0].n,label,points)
+        self.ps = ps
+        d = 0
+        eps=1e-10
+        boundary_pts = []
+        for pts in points:
+            for pt in pts:
+                for p in ps:
+                    d = p.boundary_dist(pt[0],pt[1])
+                    if d+eps < 0:
+                        break
+                if d+eps >=0:
+                    boundary_pts.append(pt)
+        self.boundary_pts = np.array(boundary_pts)
 
-    def make_points(self,args1,args2):
-        points1 = self.p1.make_points(args1)
-        points2 = self.p2.make_points(args2)
-        points = np.array([points1,points2])
-        return points
+    def make_points(self,args):
+        out = []
+        for i,p in enumerate(self.ps):
+            points = p.make_points(args[i])
+            out.append(points)
+        return out
     
-    def boundary_dist(self,x,y): # does this need to be vectorized? idk
-        return min(self.p1.boundary_dist(x,y),self.p2.boundary_dist(x,y))
+    def inside(self,x,y):
+        for p in self.ps:
+            if p.boundary_dist(x,y)<=0:
+                return -1
+        return 1
+
+    def boundary_dist(self,x,y): 
+        # yes, there is probably some more general way to compute distance to boundary of an arbitrary union of polygons...
+        return np.min(np.sqrt((np.power(self.boundary_pts[:,0]-x,2) + np.power(self.boundary_pts[:,1]-y,2)))) * self.inside(x,y)
+
+    def make_poly(self,geom):
+        if hasattr(self.points[0][0],'__len__'):
+            ps = [geom.add_polygon(p) for p in self.points]
+            polys = geom.boolean_union(ps)
+            poly = polys
+        else:
+            poly = geom.add_polygon(self.points)
+        return poly
+
+class Prim2DArray(Prim2D):
+    """an array of identical non-intersecting Prim2Ds copied at different locations """
+    def __init__(self,ps:list[Prim2D],label):
+        ns = [p.n for p in ps]
+        assert np.all(np.array(ns)==ns[0]),"primitives must have the same refractive index"
+        for p in ps:
+            assert hasattr(p,'center'), "all primitives must have a defined center point"
+
+        super().__init__(ps[0].n,label,[p.points for p in ps])
+        self.ps = ps
+        self.centers = np.array([p.center for p in ps])
+        self.label = label
+    
+    def boundary_dist(self, x, y):
+        dist_to_centers = np.sqrt( np.power(x- self.centers[:,0],2)+np.power(y- self.centers[:,1],2))
+        idx = np.argmin(dist_to_centers)
+        return self.ps[idx].boundary_dist(x,y)
+
+    def make_poly(self,geom):
+        polys = [geom.add_polygon(p) for p in self.points]
+        return polys
 
 #endregion    
 
@@ -354,56 +408,68 @@ class Waveguide:
         
         self.primsflat = primsflat
 
-    def make_mesh(self,algo=6,order=2):
-        """ construct a finite element mesh for the Waveguide cross-section at the currently set 
-            z coordinate, which in turn is set through self.update(z). note that meshes will not 
-            vary continuously with z. this can only be guaranteed by manually applying a transformation
-            to the mesh points which takes it from z1 -> z2.
-        """
+    def make_mesh(self,algo=6,order=2,adaptive=False):
+        """ construct a mesh with boundary refinement at material interfaces."""
+
+        _scale = self.mesh_dist_scale
+        _power = self.mesh_dist_power
+        min_mesh_size = self.min_mesh_size
+        max_mesh_size = self.max_mesh_size
+
         with pygmsh.occ.Geometry() as geom:
             gmsh.option.setNumber('General.Terminal', 0)
             # make the polygons
             polygons = []
+            nested_polygons = []
             for el in self.prim2Dgroups:
                 if type(el) != list:
                     #polygons.append(geom.add_polygon(el.prim2D.points))
-                    polygons.append(el.make_poly(geom))
+                    poly = el.make_poly(geom)
+                    nested_polygons.append(poly)
+                    if type(poly) == list:
+                        polygons += poly
+                    else:
+                        polygons.append(poly)
                 else:
                     els = []
+                    nested_els = []
                     for _el in el:
                         #els.append(geom.add_polygon(_el.prim2D.points))
-                        els.append(_el.make_poly(geom))
+                        poly = _el.make_poly(geom)
+                        nested_els.append(poly)
+                        if type(poly) == list:
+                            els += poly
+                        else:
+                            els.append(poly)
+                    nested_polygons.append(nested_els)
                     polygons.append(els)
 
-            # diff the polygons
-            for i in range(len(self.prim2Dgroups)-2,-1,-1):
-                polys = polygons[i]
-                for j in range(len(self.prim2Dgroups)-1,i,-1):
-                    _polys = polygons[j]
-                    polys = geom.boolean_difference(polys,_polys,delete_other=False,delete_first=True)
-            """
             # diff the polygons
             for i in range(0,len(self.prim2Dgroups)-1):
                 polys = polygons[i]
                 for j in range(i+1,len(self.prim2Dgroups)):
                     _polys = polygons[j]
                     polys = geom.boolean_difference(polys,_polys,delete_other=False,delete_first=True)
-            """
-            
-            for i,el in enumerate(polygons):
+
+            # add physical groups
+            for i,el in enumerate(nested_polygons):
                 if type(el) == list:
                     # group by labels
-                    labels = set([p.label for p in self.prim2Dgroups[i]])
-                    for l in labels:
-                        gr = []
-                        for k,poly in enumerate(el):
-                            if self.prim2Dgroups[i][k].label == l:
-                                gr.append(poly)
-                        geom.add_physical(gr,l)
+                    for j,_el in enumerate(el):
+                        geom.add_physical(_el,self.prim2Dgroups[i][j].label)
                 else:
                     geom.add_physical(el,self.prim2Dgroups[i].label)
 
+            if adaptive:
+                # mesh refinement callback
+                def callback(dim,tag,x,y,z,lc):
+                    return self.compute_mesh_size(x,y,_scale=_scale,_power=_power,min_size=min_mesh_size,max_size=max_mesh_size)
+                geom.set_mesh_size_callback(callback)
+
+            geom.env.removeAllDuplicates()
+
             mesh = geom.generate_mesh(dim=2,order=order,algorithm=algo)
+
             get_unique_edges(mesh)
             return mesh
     
@@ -419,19 +485,20 @@ class Waveguide:
         """
         
         prims = self.primsflat
-
         dists = np.zeros(len(prims)) # compute a distance to each primitive boundary
         for i,p in enumerate(prims): 
             if p.skip_refinement and p.mesh_size is not None:
                 dists[i] = 0. # if there is a set mesh size and we dont care about boundary refinement, set dist=0 -> fixed mesh size inside primitive later
             else:
                 dists[i] = p.boundary_dist(x,y)
-
         # compute target mesh sizes
         mesh_sizes = np.zeros(len(prims))
         for i,d in enumerate(dists): 
             p = prims[i]
-            boundary_mesh_size = np.sqrt((p.points[0,0]-p.points[1,0])**2 + (p.points[0,1]-p.points[1,1])**2) 
+            if hasattr(p.points[0][0],'__len__'):
+                boundary_mesh_size = np.sqrt((p.points[0][0][0]-p.points[0][1][0])**2 + (p.points[0][0][1]-p.points[0][1][1])**2) 
+            else:
+                boundary_mesh_size = np.sqrt((p.points[0][0]-p.points[1][0])**2 + (p.points[0][1]-p.points[1][1])**2) 
             scaled_size = np.power(1+np.abs(d)/boundary_mesh_size *_scale ,_power) * boundary_mesh_size # this goes to boundary_mesh_size as d->0, and increases as d->inf for _power>0
             if d<=0 and p.mesh_size is not None:
                 mesh_sizes[i] = min(scaled_size,p.mesh_size)
@@ -443,62 +510,6 @@ class Waveguide:
         if max_size:
             scaled_size = min(max_size,target_size)    
         return target_size
-    
-    def make_mesh_bndry_ref(self,algo=6,order=2):
-        """ construct a mesh with boundary refinement at material interfaces."""
-
-        _scale = self.mesh_dist_scale
-        _power = self.mesh_dist_power
-        min_mesh_size = self.min_mesh_size
-        max_mesh_size = self.max_mesh_size
-
-        with pygmsh.occ.Geometry() as geom:
-            gmsh.option.setNumber('General.Terminal', 0)
-            # make the polygons
-            polygons = []
-            for el in self.prim2Dgroups:
-                if type(el) != list:
-                    #polygons.append(geom.add_polygon(el.prim2D.points))
-                    polygons.append(el.make_poly(geom))
-                else:
-                    els = []
-                    for _el in el:
-                        #els.append(geom.add_polygon(_el.prim2D.points))
-                        els.append(_el.make_poly(geom))
-                    polygons.append(els)
-
-            # diff the polygons
-            for i in range(0,len(self.prim2Dgroups)-1):
-                polys = polygons[i]
-                _polys = polygons[i+1]
-                polys = geom.boolean_difference(polys,_polys,delete_other=False,delete_first=True)
-
-            # add physical groups
-            for i,el in enumerate(polygons):
-                if type(el) == list:
-                    # group by labels
-                    labels = set([p.label for p in self.prim2Dgroups[i]])
-                    for l in labels:
-                        gr = []
-                        for k,poly in enumerate(el):
-                            if self.prim2Dgroups[i][k].label == l:
-                                gr.append(poly)
-
-                        geom.add_physical(gr,l)
-                else:
-                    geom.add_physical(el,self.prim2Dgroups[i].label)
-
-            # mesh refinement callback
-            def callback(dim,tag,x,y,z,lc):
-                return self.compute_mesh_size(x,y,_scale=_scale,_power=_power,min_size=min_mesh_size,max_size=max_mesh_size)
-
-            geom.env.removeAllDuplicates()
-            geom.set_mesh_size_callback(callback)
-
-            mesh = geom.generate_mesh(dim=2,order=order,algorithm=algo)
-
-            get_unique_edges(mesh)
-            return mesh
 
     def assign_IOR(self):
         """ build a dictionary which maps all material labels in the Waveguide mesh
@@ -627,7 +638,7 @@ class PhotonicCrystalFiber(Waveguide):
             xg[1::2, :] += 0.5 * spacing
 
         rg = np.sqrt(xg*xg + yg*yg)
-        xhole , yhole = xg[rg < rclad].flatten() , yg[rg < rclad].flatten()
+        xhole , yhole = xg[rg < rclad-rhole].flatten() , yg[rg < rclad-rhole].flatten()
 
         # make holes
         holes = []
@@ -664,7 +675,7 @@ class PhotonicBandgapFiber(Waveguide):
         """    
         
         # get air hole positions
-        layers = int(rclad/spacing)
+        layers = int(rclad/spacing)+1
         xa = ya = np.linspace(-layers*spacing,layers*spacing,2*layers+1,endpoint=True)
         xg , yg = np.meshgrid(xa,ya)
 
@@ -675,26 +686,36 @@ class PhotonicBandgapFiber(Waveguide):
             xg[1::2, :] += 0.5 * spacing
 
         rg = np.sqrt(xg*xg + yg*yg)
-        xhole , yhole = xg[rg < rclad].flatten() , yg[rg < rclad].flatten()
+        xhole , yhole = xg[rg < rclad-rhole].flatten() , yg[rg < rclad-rhole].flatten()
 
         # make holes
         holes = []
+        overlapped_holes = []
         for xh,yh in zip(xhole,yhole):
-            hole = Circle(nhole,"hole")
+            hole = Circle(nhole,None)
             hole.make_points(rhole,hole_res,(xh,yh))
             hole.mesh_size = hole_mesh_size
-            holes.append(hole)
+            if np.sqrt(xh*xh+yh*yh)-rhole <= rvoid:
+                overlapped_holes.append(hole)
+            else:
+                holes.append(hole)
 
         # make cladding
         cladding = Circle(nclad,"cladding")
         cladding.make_points(rclad,clad_res)
         cladding.mesh_size = clad_mesh_size
         
-        # make center hole
-        center_hole = Circle(nhole,"center")
-        center_hole.make_points(rvoid,int(rvoid/rhole)*hole_res)
+        # make center void
+        center = Circle(nhole,None)
+        center.make_points(rvoid,int(rvoid/rhole)*hole_res)
+        overlapped_holes.append(center)
 
-        super().__init__([cladding,holes,center_hole])
+        void = Prim2DUnion(overlapped_holes,"void")
+        void.mesh_size = hole_mesh_size
+
+        hole_array = Prim2DArray(holes,"holes")
+
+        super().__init__([cladding,[hole_array,void]])
 
 
 #endregion

@@ -274,7 +274,7 @@ def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
 
     return w[::-1],v.T[::-1],mode_count
 
-def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10,order=2):
+def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10,order=2,target_neff=None):
     """ given a mesh, propagation wavelength, and refractive index dictionary, solve for the SCALAR modes. 
         this has the same functionality as running construct_AB() and solve(). 
     
@@ -287,6 +287,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True
         sparse: set True to use a sparse solver, which is can handle larger meshes but is slower
         Nmax: return only the <Nmax> largest eigenvalue/eigenvector pairs
         order: the order of the triangular finite elements. can be 1 (linear) or 2 (quadratic) ; default 2
+        target_neff: search for modes with indices close to but below this value. if None, target_neff is set to the maximum index in the guide.
     RETURNS:
         w: array of eigenvalues, descending order
         v: array of corresponding eigenvectors (waveguide modes)
@@ -294,7 +295,10 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True
     """
     
     k = 2*np.pi/wl
-    est_eigval = np.power(k*max(IOR_dict.values()),2)
+    if target_neff is None:
+        est_eigval = np.power(k*max(IOR_dict.values()),2)
+    else:
+        est_eigval = np.power(k*target_neff,2)
     
     A,B = construct_AB(mesh,IOR_dict,k,sparse=sparse,order=order)
     N = A.shape[0]
@@ -328,7 +332,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True
 
     return w[::-1],v.T[::-1],mode_count
 
-def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10):
+def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10,target_neff=None):
     """ given a mesh, propagation wavelength, and refractive index dictionary, solve for VECTOR modes, using linear triangles (order 1).
     
     ARGS: 
@@ -339,6 +343,7 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
         ignore_warning: bypass the warning raised when the mesh becomes too large to solve safely with scipy.linalg.eigh()
         sparse: set True to use a sparse solver, which is can handle larger meshes but is slower
         Nmax: return only the <Nmax> largest eigenvalue/eigenvector pairs
+        target_neff: search for modes with indices close to but below this value. if None, target_neff is set to the maximum index in the guide.
     RETURNS:
         w: array of eigenvalues, descending order
         v: array of corresponding eigenvectors (waveguide modes)
@@ -348,7 +353,11 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
     assert mesh.cells[1].data.shape[1] == 3, "must use order 1 mesh for vectorial solver"
 
     k = 2*np.pi/wl
-    est_eigval = np.power(k*max(IOR_dict.values()),2)
+
+    if target_neff is None:
+        est_eigval = np.power(k*max(IOR_dict.values()),2)
+    else:
+        est_eigval = np.power(k*target_neff,2)
 
     A,B = construct_AB_vec(mesh,IOR_dict,k,sparse=sparse)
     N = A.shape[0]
@@ -361,8 +370,9 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
         w = _w[inds][:Nmax]
         v = _v[:,inds][:,:Nmax]
     else:
-        C = spsolve(B,A)
-        w,v = eigs(C,k=Nmax,which='SR',sigma=est_eigval)
+        w,v = eigsh(A,Nmax,B,sigma=est_eigval,which='SA')
+        w = w[::-1]
+        v = v[:,::-1]
 
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)
@@ -373,11 +383,11 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
             continue
         ne = np.sqrt(_w/k**2)
         if plot:
-            if not (nmin <= ne <= nmax):
+            if not (nmin <= ne <= nmax) and target_neff is None:
                 print("warning: spurious mode! stopping plotting ... ")
             print("effective index: ",get_eff_index(wl,_w))
             plot_vector_mode(mesh,_v)
-        if (nmin <= ne <= nmax):
+        if (nmin <= ne <= nmax) or target_neff is not None:
             mode_count+=1
         else:
             break

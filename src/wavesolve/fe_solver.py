@@ -514,14 +514,14 @@ def plot_scalar_mode(mesh,v,show_mesh=False,ax=None):
         plt.show()
     return im    
 
-def plot_vector_mode(mesh,v,show_mesh=False,ax=None):
+def plot_vector_mode(mesh,v,show_mesh=False,ax=None,arrows=True):
     """ plot a scalar eigenmode 
     ARGS
         mesh: finite element mesh
         v: an array (column vector) corresponding to an eigenmode
         show_mesh: set True to additionally plot the mesh geometry
         ax: optionally put the plot on a specific matplotlib axis
-        arrow_scale: factor for rescaling arrow sizes in the quiver plot
+        arrows: whether or not to overplot field arrows
     """
     tris = mesh.cells[1].data
 
@@ -550,7 +550,8 @@ def plot_vector_mode(mesh,v,show_mesh=False,ax=None):
     vecs = np.array(vecs)
 
     ax.tricontourf(xps,yps,amps,levels=60)
-    ax.quiver(xps,yps,vecs[:,0],vecs[:,1],color='white')
+    if arrows:
+        ax.quiver(xps,yps,vecs[:,0],vecs[:,1],color='white')
     if show_mesh:
         plot_mesh(mesh,ax=ax)
     if show:

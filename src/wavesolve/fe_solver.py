@@ -332,7 +332,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True
 
     return w[::-1],v.T[::-1],mode_count
 
-def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10,target_neff=None):
+def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10,target_neff=None,sparse_solve_mode='factorize'):
     """ given a mesh, propagation wavelength, and refractive index dictionary, solve for VECTOR modes, using linear triangles (order 1).
     
     ARGS: 
@@ -349,8 +349,9 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
         v: array of corresponding eigenvectors (waveguide modes)
         N: number non-spurious (i.e. propagating) waveguide modes
     """
-    
+
     assert mesh.cells[1].data.shape[1] == 3, "must use order 1 mesh for vectorial solver"
+    assert sparse_solve_mode in ["straight","factorize"], "sparse solve mode must be `straight` (plug into eigenproblem into eigsh) or `factorize` (spsolve into eigs)"
 
     k = 2*np.pi/wl
 
@@ -370,14 +371,14 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
         w = _w[inds][:Nmax]
         v = _v[:,inds][:,:Nmax]
     else:
-        w,v = eigsh(A,Nmax,B,sigma=est_eigval,which='SA')
-        w = w[::-1]
-        v = v[:,::-1]
-
+        if sparse_solve_mode == "factorize":
+            C = spsolve(B.tocsc(),A.tocsc())
+            w,v = eigs(C,Nmax,sigma=est_eigval,which='SR')
+        else:
+            w,v = eigsh(A,k=Nmax,M=B,which='SA',sigma=est_eigval)
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)
     mode_count = 0
-    
     for _w,_v in zip(w,v.T):
         if _w<0:
             continue
@@ -391,7 +392,6 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
             mode_count+=1
         else:
             break
-
     return w,v.T,mode_count
 
 #endregion

@@ -13,14 +13,16 @@ def get_unique_edges(mesh,mutate=True):
     tris = mesh.cells[1].data
     
     unique_edges = list()
-    edge_indices = np.zeros_like(tris)
+    edge_indices = np.zeros((tris.shape[0],3))
+    edge_flips = np.ones((tris.shape[0],3))
 
     i = 0
     for j,tri in enumerate(tris):
         e0 = sorted([tri[0],tri[1]])
         e1 = sorted([tri[1],tri[2]])
         e2 = sorted([tri[2],tri[0]])
-        es= [e0,e1,e2]
+        es = [e0,e1,e2]
+        es_unsort = [[tri[0],tri[1]],[tri[1],tri[2]],[tri[2],tri[0]]]
         for k,e in enumerate(es):
             if e not in unique_edges:
                 unique_edges.append(e)
@@ -28,10 +30,14 @@ def get_unique_edges(mesh,mutate=True):
                 i += 1
             else:
                 edge_indices[j,k] = unique_edges.index(e)
+            if e != es_unsort[k]:
+                edge_flips[j,k] = -1
+
     out = np.array(unique_edges)
     if mutate:
         mesh.cells[0].data = out
         mesh.edge_indices = edge_indices
+        mesh.edge_flips = edge_flips
     return out,edge_indices
 
 def plot_mesh(mesh,IOR_dict=None,alpha=0.3,ax=None,plot_points=True):

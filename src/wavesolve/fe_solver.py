@@ -683,7 +683,7 @@ def get_interp_weights_vec(mesh,xa,ya,tri_idxs):
                 gridpoint = [xa[i],ya[j]]
                 vertices = points[tris[tri]][:,:2]
 
-                weights[i,j,k,:] = get_edge_linear_basis_funcs_affine()[k](gridpoint,vertices,mesh.cells[1].data[tri])
+                weights[i,j,k,:] = get_edge_linear_basis_funcs_affine()[k](gridpoint,vertices,mesh.cells[1].data[tri]) * mesh.edge_flips[tri,k]
     return weights
 
 def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None,order=2,maxr=0):

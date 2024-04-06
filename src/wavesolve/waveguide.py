@@ -134,20 +134,25 @@ def boolean_fragment(geom:pygmsh.occ.Geometry,_object,tool):
     tool = geom.boolean_difference(tool,intersection,delete_first=True,delete_other=False)
     return intersection+_object+tool
 
-def linear_taper(final_scale,z_ex):
-    def _inner_(z):
-        return (final_scale - 1)/z_ex * z + 1
-    return _inner_
-
-def blend(z,zc,a):
-    """ this is a function of z that continuously varies from 0 to 1, used to blend functions together. """
-    return 0.5 + 0.5 * np.tanh((z-zc)/(0.25*a)) # the 0.25 is kinda empirical lol
+def boolean_difference(geom,_object,_tool):
+    if type(_object) == list:
+        for o in _object:
+            if type(_tool) == list:
+                for t in _tool:
+                    o = geom.boolean_difference(o,t,delete_other=False,delete_first=True)
+            else:
+                o = geom.boolean_difference(o,_tool,delete_other=False,delete_first=True)
+    else:
+        if type(_tool) == list:
+            for t in _tool:
+                _object = geom.boolean_difference(_object,t,delete_other=False,delete_first=True)
+        else:
+            _object = geom.boolean_difference(_object,_tool,delete_other=False,delete_first=True)
+    
+    return _object
 
 def dist(p1,p2):
     return np.sqrt(np.sum(np.power(p1-p2,2)))
-
-def rotate(v,theta):
-    return np.array([np.cos(theta)*v[0] - np.sin(theta)*v[1] , np.sin(theta)*v[0] + np.cos(theta)*v[1]])
 
 def ellipse_dist(semi_major, semi_minor, c, p, iters=3):
     """ compute signed distance to axis-aligned ellipse boundary """  

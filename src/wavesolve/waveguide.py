@@ -315,6 +315,8 @@ class Prim2DUnion(Prim2D):
     def __init__(self,ps:list[Prim2D],label):
         ns = [p.n for p in ps]
         assert np.all(np.array(ns)==ns[0]),"primitives must have the same refractive index"
+        centers = np.array([p.center for p in ps])
+        self.center = np.mean(centers,axis=0)
         points = [p.points for p in ps]
         super().__init__(ps[0].n,label,points)
         self.ps = ps

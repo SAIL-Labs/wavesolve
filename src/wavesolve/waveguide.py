@@ -419,22 +419,16 @@ class Waveguide:
         with pygmsh.occ.Geometry() as geom:
             gmsh.option.setNumber('General.Terminal', 0)
             # make the polygons
-            polygons = []
             nested_polygons = []
             for el in self.prim2Dgroups:
                 if type(el) != list:
                     #polygons.append(geom.add_polygon(el.prim2D.points))
                     poly = el.make_poly(geom)
                     nested_polygons.append(poly)
-                    if type(poly) == list:
-                        polygons += poly
-                    else:
-                        polygons.append(poly)
                 else:
                     els = []
                     nested_els = []
                     for _el in el:
-                        #els.append(geom.add_polygon(_el.prim2D.points))
                         poly = _el.make_poly(geom)
                         nested_els.append(poly)
                         if type(poly) == list:
@@ -442,23 +436,21 @@ class Waveguide:
                         else:
                             els.append(poly)
                     nested_polygons.append(nested_els)
-                    polygons.append(els)
 
             # diff the polygons
             for i in range(0,len(self.prim2Dgroups)-1):
-                polys = polygons[i]
+                polys = nested_polygons[i]
                 for j in range(i+1,len(self.prim2Dgroups)):
-                    _polys = polygons[j]
-                    polys = geom.boolean_difference(polys,_polys,delete_other=False,delete_first=True)
+                    _polys = nested_polygons[j]
+                    polys = boolean_difference(geom,polys,_polys)
 
             # add physical groups
-            for i,el in enumerate(nested_polygons):
-                if type(el) == list:
-                    # group by labels
-                    for j,_el in enumerate(el):
-                        geom.add_physical(_el,self.prim2Dgroups[i][j].label)
+            for i,prim in enumerate(self.prim2Dgroups):
+                if type(prim) == list:
+                    for j,pprim in enumerate(prim):
+                        geom.add_physical(nested_polygons[i][j],pprim.label)
                 else:
-                    geom.add_physical(el,self.prim2Dgroups[i].label)
+                    geom.add_physical(nested_polygons[i],prim.label)
 
             if adaptive:
                 # mesh refinement callback
@@ -467,12 +459,11 @@ class Waveguide:
                 geom.set_mesh_size_callback(callback)
 
             geom.env.removeAllDuplicates()
-
             mesh = geom.generate_mesh(dim=2,order=order,algorithm=algo)
-
             get_unique_edges(mesh)
+
             return mesh
-    
+        
     def compute_mesh_size(self,x,y,_scale=1.,_power=1.,min_size=None,max_size=None):
         """ compute a target mesh size (triangle side length) at the point (x,y). 
         ARGS:
@@ -645,7 +636,7 @@ class PhotonicCrystalFiber(Waveguide):
         for xh,yh in zip(xhole,yhole):
             if xh*xh+yh*yh <= rcore*rcore:
                 continue
-            hole = Circle(nhole,"hole")
+            hole = Circle(nhole,None)
             hole.make_points(rhole,hole_res,(xh,yh))
             hole.mesh_size = hole_mesh_size
             holes.append(hole)
@@ -655,7 +646,7 @@ class PhotonicCrystalFiber(Waveguide):
         cladding.make_points(rclad,clad_res)
         cladding.mesh_size = clad_mesh_size
 
-        super().__init__([cladding,holes])
+        super().__init__([cladding,Prim2DArray(holes,"holes")])
 
 class PhotonicBandgapFiber(Waveguide):
     """ an optical fiber filled with a hexagonal pattern of air holes, except at the center. must be solved with vector solver. """

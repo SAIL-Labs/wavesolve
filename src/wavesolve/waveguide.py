@@ -718,6 +718,7 @@ class PhotonicBandgapFiber(Waveguide):
         void.mesh_size = hole_mesh_size
 
         hole_array = Prim2DArray(holes,"holes")
+        hole_array.mesh_size = hole_mesh_size
 
         super().__init__([cladding,[hole_array,void]])
 

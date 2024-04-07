@@ -38,6 +38,8 @@ def get_unique_edges(mesh,mutate=True):
         mesh.cells[0].data = out
         mesh.edge_indices = edge_indices
         mesh.edge_flips = edge_flips
+        mesh.num_edges = len(out)
+        mesh.num_points = mesh.points.shape[0]
     return out,edge_indices
 
 def plot_mesh(mesh,IOR_dict=None,alpha=0.3,ax=None,plot_points=True):

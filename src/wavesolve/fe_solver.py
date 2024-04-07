@@ -274,7 +274,7 @@ def solve_sparse(A,B,mesh,k,IOR_dict,plot=False,num_modes=6):
 
     return w[::-1],v.T[::-1],mode_count
 
-def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10,order=2):
+def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10,order=2,target_neff=None):
     """ given a mesh, propagation wavelength, and refractive index dictionary, solve for the SCALAR modes. 
         this has the same functionality as running construct_AB() and solve(). 
     
@@ -287,6 +287,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True
         sparse: set True to use a sparse solver, which is can handle larger meshes but is slower
         Nmax: return only the <Nmax> largest eigenvalue/eigenvector pairs
         order: the order of the triangular finite elements. can be 1 (linear) or 2 (quadratic) ; default 2
+        target_neff: search for modes with indices close to but below this value. if None, target_neff is set to the maximum index in the guide.
     RETURNS:
         w: array of eigenvalues, descending order
         v: array of corresponding eigenvectors (waveguide modes)
@@ -294,7 +295,10 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True
     """
     
     k = 2*np.pi/wl
-    est_eigval = np.power(k*max(IOR_dict.values()),2)
+    if target_neff is None:
+        est_eigval = np.power(k*max(IOR_dict.values()),2)
+    else:
+        est_eigval = np.power(k*target_neff,2)
     
     A,B = construct_AB(mesh,IOR_dict,k,sparse=sparse,order=order)
     N = A.shape[0]
@@ -328,7 +332,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True
 
     return w[::-1],v.T[::-1],mode_count
 
-def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10):
+def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10,target_neff=None,sparse_solve_mode='factorize'):
     """ given a mesh, propagation wavelength, and refractive index dictionary, solve for VECTOR modes, using linear triangles (order 1).
     
     ARGS: 
@@ -339,16 +343,22 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
         ignore_warning: bypass the warning raised when the mesh becomes too large to solve safely with scipy.linalg.eigh()
         sparse: set True to use a sparse solver, which is can handle larger meshes but is slower
         Nmax: return only the <Nmax> largest eigenvalue/eigenvector pairs
+        target_neff: search for modes with indices close to but below this value. if None, target_neff is set to the maximum index in the guide.
     RETURNS:
         w: array of eigenvalues, descending order
         v: array of corresponding eigenvectors (waveguide modes)
         N: number non-spurious (i.e. propagating) waveguide modes
     """
-    
+
     assert mesh.cells[1].data.shape[1] == 3, "must use order 1 mesh for vectorial solver"
+    assert sparse_solve_mode in ["straight","factorize"], "sparse solve mode must be `straight` (plug into eigenproblem into eigsh) or `factorize` (spsolve into eigs)"
 
     k = 2*np.pi/wl
-    est_eigval = np.power(k*max(IOR_dict.values()),2)
+
+    if target_neff is None:
+        est_eigval = np.power(k*max(IOR_dict.values()),2)
+    else:
+        est_eigval = np.power(k*target_neff,2)
 
     A,B = construct_AB_vec(mesh,IOR_dict,k,sparse=sparse)
     N = A.shape[0]
@@ -361,27 +371,27 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
         w = _w[inds][:Nmax]
         v = _v[:,inds][:,:Nmax]
     else:
-        C = spsolve(B,A)
-        w,v = eigs(C,k=Nmax,which='SR',sigma=est_eigval)
-
+        if sparse_solve_mode == "factorize":
+            C = spsolve(B.tocsc(),A.tocsc())
+            w,v = eigs(C,Nmax,sigma=est_eigval,which='SR')
+        else:
+            w,v = eigsh(A,k=Nmax,M=B,which='SA',sigma=est_eigval)
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)
     mode_count = 0
-    
     for _w,_v in zip(w,v.T):
         if _w<0:
             continue
         ne = np.sqrt(_w/k**2)
         if plot:
-            if not (nmin <= ne <= nmax):
+            if not (nmin <= ne <= nmax) and target_neff is None:
                 print("warning: spurious mode! stopping plotting ... ")
             print("effective index: ",get_eff_index(wl,_w))
             plot_vector_mode(mesh,_v)
-        if (nmin <= ne <= nmax):
+        if (nmin <= ne <= nmax) or target_neff is not None:
             mode_count+=1
         else:
             break
-
     return w,v.T,mode_count
 
 #endregion
@@ -504,14 +514,14 @@ def plot_scalar_mode(mesh,v,show_mesh=False,ax=None):
         plt.show()
     return im    
 
-def plot_vector_mode(mesh,v,show_mesh=False,ax=None):
+def plot_vector_mode(mesh,v,show_mesh=False,ax=None,arrows=True):
     """ plot a scalar eigenmode 
     ARGS
         mesh: finite element mesh
         v: an array (column vector) corresponding to an eigenmode
         show_mesh: set True to additionally plot the mesh geometry
         ax: optionally put the plot on a specific matplotlib axis
-        arrow_scale: factor for rescaling arrow sizes in the quiver plot
+        arrows: whether or not to overplot field arrows
     """
     tris = mesh.cells[1].data
 
@@ -540,7 +550,8 @@ def plot_vector_mode(mesh,v,show_mesh=False,ax=None):
     vecs = np.array(vecs)
 
     ax.tricontourf(xps,yps,amps,levels=60)
-    ax.quiver(xps,yps,vecs[:,0],vecs[:,1],color='white')
+    if arrows:
+        ax.quiver(xps,yps,vecs[:,0],vecs[:,1],color='white')
     if show_mesh:
         plot_mesh(mesh,ax=ax)
     if show:
@@ -672,7 +683,7 @@ def get_interp_weights_vec(mesh,xa,ya,tri_idxs):
                 gridpoint = [xa[i],ya[j]]
                 vertices = points[tris[tri]][:,:2]
 
-                weights[i,j,k,:] = get_edge_linear_basis_funcs_affine()[k](gridpoint,vertices,mesh.cells[1].data[tri])
+                weights[i,j,k,:] = get_edge_linear_basis_funcs_affine()[k](gridpoint,vertices,mesh.cells[1].data[tri]) #* mesh.edge_flips[tri,k]
     return weights
 
 def interpolate(v,mesh,xa,ya,tri_idxs = None,interp_weights = None,meshtree=None,order=2,maxr=0):

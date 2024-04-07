@@ -13,7 +13,7 @@ def get_unique_edges(mesh,mutate=True):
     tris = mesh.cells[1].data
     
     unique_edges = list()
-    edge_indices = np.zeros((tris.shape[0],3))
+    edge_indices = np.zeros((tris.shape[0],3),dtype=np.uint)
     edge_flips = np.ones((tris.shape[0],3))
 
     i = 0

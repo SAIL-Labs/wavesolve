@@ -9,6 +9,10 @@ from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply
 from wavesolve.mesher import construct_meshtree
 from wavesolve.shape_funcs import *
 from wavesolve.waveguide import plot_mesh
+try:
+    import pypardiso
+except:
+    pass
 
 #region FEM matrices
 
@@ -332,7 +336,7 @@ def solve_waveguide(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True
 
     return w[::-1],v.T[::-1],mode_count
 
-def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10,target_neff=None,sparse_solve_mode='factorize'):
+def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=True,Nmax=10,target_neff=None,sparse_solve_mode='transform',verbose=True):
     """ given a mesh, propagation wavelength, and refractive index dictionary, solve for VECTOR modes, using linear triangles (order 1).
     
     ARGS: 
@@ -344,6 +348,8 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
         sparse: set True to use a sparse solver, which is can handle larger meshes but is slower
         Nmax: return only the <Nmax> largest eigenvalue/eigenvector pairs
         target_neff: search for modes with indices close to but below this value. if None, target_neff is set to the maximum index in the guide.
+        sparse_solve_mode: mode to solve the generalized eigenvalue problem. default is 'transform' -> use spsolve to convert to ordinary eigenvalue problem. 
+        verbose: set False to block all printouts
     RETURNS:
         w: array of eigenvalues, descending order
         v: array of corresponding eigenvectors (waveguide modes)
@@ -351,7 +357,7 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
     """
 
     assert mesh.cells[1].data.shape[1] == 3, "must use order 1 mesh for vectorial solver"
-    assert sparse_solve_mode in ["straight","factorize"], "sparse solve mode must be `straight` (plug into eigenproblem into eigsh) or `factorize` (spsolve into eigs)"
+    assert sparse_solve_mode in ["straight","transform","pardiso"], "sparse solve mode must be `straight` (plug into eigenproblem into eigsh) or `transform` (use spsolve to convert into an ordinary eigenproblen, then use eigs)"
 
     k = 2*np.pi/wl
 
@@ -360,22 +366,35 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
     else:
         est_eigval = np.power(k*target_neff,2)
 
+    if verbose:
+        print("building matrices ... ")
     A,B = construct_AB_vec(mesh,IOR_dict,k,sparse=sparse)
     N = A.shape[0]
 
     if A.shape[0]>2000 and not ignore_warning and not sparse:
         raise Exception("A and B matrices are larger than 2000 x 2000 - this may make your system unstable. consider setting sparse=True")
+    
+    if verbose:
+        print("solving...")
+
     if not sparse:
         _w,_v = eig(A,B,overwrite_a=True,overwrite_b=True)
         inds = _w.argsort()[::-1]
         w = _w[inds][:Nmax]
         v = _v[:,inds][:,:Nmax]
     else:
-        if sparse_solve_mode == "factorize":
-            C = spsolve(B.tocsc(),A.tocsc())
-            w,v = eigs(C,Nmax,sigma=est_eigval,which='SR')
+        if sparse_solve_mode == "transform":
+            C = spsolve(A - est_eigval*B,B.todense())
+            w,v = eigs(C,Nmax,which='SR')
+            w = est_eigval + 1/w
+        elif sparse_solve_mode == "pardiso":
+            C = pypardiso.spsolve(A - est_eigval*B,B.todense())
+            w,v = eigs(C,Nmax,which='SR') 
+            w = est_eigval + 1/w
         else:
             w,v = eigsh(A,k=Nmax,M=B,which='SA',sigma=est_eigval)
+    if verbose:
+        print("solving complete")
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin,nmax = min(IORs) , max(IORs)
     mode_count = 0

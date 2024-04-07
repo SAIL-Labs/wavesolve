@@ -14,7 +14,7 @@ To update the package:
 pip install --force-reinstall git+https://github.com/jw-lin/wavesolve.git
 ```
 
-Python dependencies: `numpy`,`scipy`,`matplotlib`,`numexpr`,`pygmsh`,`jupyter` \
+Python dependencies: `numpy`,`scipy`,`matplotlib`,`numexpr`,`pygmsh`,`jupyter`,`pypardiso` (optional) \
 Other dependencies: <a href="https://gmsh.info/">`Gmsh`</a> (required for `pygmsh`).
 
 ## documentation

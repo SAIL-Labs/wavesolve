@@ -20,6 +20,8 @@ Other dependencies: <a href="https://gmsh.info/">`Gmsh`</a> (required for `pygms
 ## documentation
 See <a href="getting-started.ipynb">`getting-started.ipynb`</a> for an overview and some working examples.
 
+## acknowledgments
+NSF grants 2109231, 2109232, 2308360, 2308361
 
 
 

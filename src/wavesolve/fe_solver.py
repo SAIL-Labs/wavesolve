@@ -4,10 +4,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh,eig
 from scipy.sparse.linalg import eigsh,eigs,spsolve
-from scipy.sparse import lil_matrix
+from scipy.sparse import csr_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs,get_linear_basis_funcs_affine,get_edge_linear_basis_funcs_affine
 from wavesolve.mesher import construct_meshtree
 from wavesolve.shape_funcs import *
+from wavesolve.shape_funcs import compute_NN_dNdN_vec
 from wavesolve.waveguide import plot_mesh
 try:
     import pypardiso
@@ -32,22 +33,22 @@ def construct_AB_order2(mesh,IOR_dict,k,sparse=False,poke_index = None):
 
     N = len(points)
 
-    if not sparse:
-        A = np.zeros((N,N))
-        B = np.zeros((N,N))
-    else:
-        A = lil_matrix((N,N))
-        B = lil_matrix((N,N))
-
+    A = np.zeros((N,N))
+    B = np.zeros((N,N))
+        
     for material in materials:
         tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
-        for tri in tris:
-            tri_points = points[tri]
-            NN = compute_NN(tri_points)
-            dNdN = compute_dNdN(tri_points)
-            ix = np.ix_(tri,tri)
-            A[ix] += (k**2*IOR_dict[material]**2) * NN - dNdN
-            B[ix] += NN
+        ixs_x = np.repeat(tris, 6, 0).reshape((len(tris), 6, 6))
+        ixs_y = np.transpose(ixs_x, (0, 2, 1))
+        tris_points = points[tris]
+        NNs, dNdNs = compute_NN_dNdN_vec(tris_points)
+        A_places = (k**2*IOR_dict[material]**2) * NNs - dNdNs
+        np.add.at(A, (ixs_x, ixs_y), A_places)
+        np.add.at(B, (ixs_x, ixs_y), NNs)
+    
+    if sparse:
+        A = csr_matrix(A)
+        B = csr_matrix(B)
 
     # now poke if necessary
     if poke_index is not None:

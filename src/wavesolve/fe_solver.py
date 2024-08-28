@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh,eig
 from scipy.sparse.linalg import eigsh,eigs,spsolve
-from scipy.sparse import lil_matrix
+from scipy.sparse import csr_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs,get_linear_basis_funcs_affine,get_edge_linear_basis_funcs_affine
 from wavesolve.mesher import construct_meshtree
 from wavesolve.shape_funcs import *
@@ -35,7 +35,7 @@ def construct_AB_order2(mesh,IOR_dict,k,sparse=False,poke_index = None):
 
     A = np.zeros((N,N))
     B = np.zeros((N,N))
-
+        
     for material in materials:
         tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
         ixs_x = np.repeat(tris, 6, 0).reshape((len(tris), 6, 6))
@@ -43,12 +43,12 @@ def construct_AB_order2(mesh,IOR_dict,k,sparse=False,poke_index = None):
         tris_points = points[tris]
         NNs, dNdNs = compute_NN_dNdN_vec(tris_points)
         A_places = (k**2*IOR_dict[material]**2) * NNs - dNdNs
-        A[ixs_x,ixs_y] += A_places
-        B[ixs_x,ixs_y] += NNs
-        
+        np.add.at(A, (ixs_x, ixs_y), A_places)
+        np.add.at(B, (ixs_x, ixs_y), NNs)
+    
     if sparse:
-        A = lil_matrix(A)
-        B = lil_matrix(B)
+        A = csr_matrix(A)
+        B = csr_matrix(B)
 
     # now poke if necessary
     if poke_index is not None:

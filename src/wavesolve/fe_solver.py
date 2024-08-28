@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh,eig
 from scipy.sparse.linalg import eigsh,eigs,spsolve
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, lil_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs,get_linear_basis_funcs_affine,get_edge_linear_basis_funcs_affine
 from wavesolve.mesher import construct_meshtree
 from wavesolve.shape_funcs import *
@@ -32,23 +32,27 @@ def construct_AB_order2(mesh,IOR_dict,k,sparse=False,poke_index = None):
     materials = mesh.cell_sets.keys()
 
     N = len(points)
-
-    A = np.zeros((N,N))
-    B = np.zeros((N,N))
         
-    for material in materials:
-        tris = mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:]
-        ixs_x = np.repeat(tris, 6, 0).reshape((len(tris), 6, 6))
-        ixs_y = np.transpose(ixs_x, (0, 2, 1))
+    all_tris = [mesh.cells[1].data[tuple(mesh.cell_sets[material])][0,:,0,:] for material in materials]
+    if sparse:
+        all_tris_v = np.vstack(all_tris)
+        row_indices = np.repeat(all_tris_v, 6, 0).flatten()
+        col_indices = np.repeat(all_tris_v, 6, 1).flatten()
+        A_data = np.zeros(len(row_indices))
+        B_data = np.zeros(len(row_indices))
+    else:
+        A = np.zeros((N,N))
+        B = np.zeros((N,N))
+        
+    mat_idx = 0
+    for (tris, material) in zip(all_tris, materials):
         tris_points = points[tris]
         NNs, dNdNs = compute_NN_dNdN_vec(tris_points)
-        A_places = (k**2*IOR_dict[material]**2) * NNs - dNdNs
-        np.add.at(A, (ixs_x, ixs_y), A_places)
-        np.add.at(B, (ixs_x, ixs_y), NNs)
-    
-    if sparse:
-        A = csr_matrix(A)
-        B = csr_matrix(B)
+        A_places = ((k**2*IOR_dict[material]**2) * NNs - dNdNs).flatten()
+        mat_N = len(A_places)
+        A_data[mat_idx:mat_idx+mat_N] += A_places
+        B_data[mat_idx:mat_idx+mat_N] += NNs.flatten()
+        mat_idx += mat_N
 
     # now poke if necessary
     if poke_index is not None:
@@ -59,6 +63,9 @@ def construct_AB_order2(mesh,IOR_dict,k,sparse=False,poke_index = None):
                 ix = np.ix_(tri,tri)
                 A[ix] += 0.1 * NN
 
+    if sparse:
+        A = csr_matrix((A_data, (row_indices, col_indices)))
+        B = csr_matrix((B_data, (row_indices, col_indices)))
     return A,B
 
 def construct_B_order2(mesh,sparse=False):

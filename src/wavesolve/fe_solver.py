@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh,eig
 from scipy.sparse.linalg import eigsh,eigs,spsolve
-from scipy.sparse import csr_matrix, lil_matrix
+from scipy.sparse import csr_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs,get_linear_basis_funcs_affine,get_edge_linear_basis_funcs_affine
 from wavesolve.mesher import construct_meshtree
 from wavesolve.shape_funcs import *

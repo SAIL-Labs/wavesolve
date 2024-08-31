@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh,eig
 from scipy.sparse.linalg import eigsh,eigs,spsolve
-from scipy.sparse import csr_matrix
+from scipy.sparse import csr_matrix, lil_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs,get_linear_basis_funcs_affine,get_edge_linear_basis_funcs_affine
 from wavesolve.mesher import construct_meshtree
 from wavesolve.shape_funcs import *
@@ -79,19 +79,22 @@ def construct_B_order2(mesh,sparse=False):
     """
     
     points = mesh.points
-
-    N = len(points)
-
-    if not sparse:
-        B = np.zeros((N,N))
+    tris = mesh.cells[1].data
+    tris_v = np.vstack(tris)
+    tris_points = points[tris]
+    NNs = compute_NN_dNdN_vec(tris_points, do_dNdN=False)
+    if sparse:
+        row_indices = np.repeat(tris_v, 6, 0).flatten()
+        col_indices = np.repeat(tris_v, 6, 1).flatten()
+        B = csr_matrix((NNs.flatten(), (row_indices, col_indices)))
     else:
-        B = lil_matrix((N,N))
-
-    for tri in mesh.cells[1].data:
-        tri_points = points[tri]
-        NN = compute_NN(tri_points)
-        ix = np.ix_(tri,tri)
-        B[ix] += NN
+        N = len(points)
+        B = np.zeros((N,N))
+        for tri in mesh.cells[1].data:
+            tri_points = points[tri]
+            NN = compute_NN(tri_points)
+            ix = np.ix_(tri,tri)
+            B[ix] += NN
 
     return B
 

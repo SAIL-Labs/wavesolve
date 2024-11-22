@@ -82,7 +82,7 @@ def construct_B_order2(mesh,sparse=False):
     tris = mesh.cells[1].data
     tris_v = np.vstack(tris)
     tris_points = points[tris]
-    NNs = compute_NN_dNdN_vec(tris_points, do_dNdN=False)
+    NNs, dNdNs = compute_NN_dNdN_vec(tris_points)
     if sparse:
         row_indices = np.repeat(tris_v, 6, 0).flatten()
         col_indices = np.repeat(tris_v, 6, 1).flatten()

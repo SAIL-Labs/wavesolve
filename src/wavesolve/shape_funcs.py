@@ -189,7 +189,7 @@ def compute_dNdN(tri,_J=None,row=None):
 
     return out
 
-def compute_NN_dNdN_vec(tris,row=None):
+def compute_NN_dNdN_vec(tris,row=None,do_dNdN=True):
     NN_out = np.zeros((len(tris),6,6),dtype=np.float64)
     
     # nodes assumed to be ordered vertices (clockwise) then edges (clockwise). first vertex is origin of affine transform
@@ -213,6 +213,9 @@ def compute_NN_dNdN_vec(tris,row=None):
     # edge edge relations
     NN_out[:,3,4] = NN_out[:,4,3] = NN_out[:,3,5] = NN_out[:,5,3] = NN_out[:,4,5] = NN_out[:,5,4] = 2*_J/45
 
+    if not do_dNdN:
+        return NN_out
+    
     out = np.zeros((len(tris),6,6),dtype=np.float64)
 
     # diagonals

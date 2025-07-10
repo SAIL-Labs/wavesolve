@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.colors import ListedColormap
-from wavesolve.fe_solver import get_eff_index, plot_vector_mode
+from wavesolve.fe_solver import get_eff_index, plot_vector_mode, plot_scalar_mode
 
 def create_distinct_colormap(n_needed=60):
     """Create colormap using tab20 and Set3 for maximum distinction"""
@@ -22,7 +22,7 @@ def create_distinct_colormap(n_needed=60):
 
 def plot_modes(w, v, m, wl, IOR_dict, target_radius=None,
                basefigsize=2, no_cols=6, circle_color='white',
-               circle_linewidth=1, circle_linestyle='dashed'):
+               circle_linewidth=1, circle_linestyle='dashed', plot_vector=True):
     """
     Plot vector modes in subplots with circles overlay.
 
@@ -80,7 +80,11 @@ def plot_modes(w, v, m, wl, IOR_dict, target_radius=None,
         ax = axs[row, col]
 
         ax.set_aspect('equal')
-        plot_vector_mode(m, _v, ax=ax, arrows=False)
+        if plot_vector:
+            plot_vector_mode(m, _v, ax=ax, arrows=False)
+        else:
+            plot_scalar_mode(m,_v,ax=ax)
+
         ax.plot(circle_x, circle_y, color=circle_color,
                 linewidth=circle_linewidth, linestyle=circle_linestyle)
 

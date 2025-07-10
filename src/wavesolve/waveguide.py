@@ -724,4 +724,374 @@ class PhotonicBandgapFiber(Waveguide):
 
         super().__init__([cladding,[hole_array,void]])
 
+
+class FiberBundleLantern(Waveguide):
+    """Photonic lantern with hexagonal arrangement of individual fibers - WaveSolve compatible"""
+
+    def __init__(self, r_jack, r_fiber_clad, r_core, n_rings, n_core, n_clad,
+                 core_res=16, clad_res=32, jack_res=None,
+                 spacing_factor=2.0, include_center=True,
+                 taper_ratio=1.0, r_target_mmcore_size=None,
+                 core_mesh_size=None, clad_mesh_size=None,
+                 n_jack=None, center_clad_factor=1.5,
+                 ring_clad_factors=None):
+        """
+        Initialize hexagonal fiber bundle photonic lantern.
+
+        Args:
+            r_jack: jacket radius
+            r_fiber_clad: individual fiber cladding radius
+            r_core: core radius (final size after taper)
+            n_rings: number of hexagonal rings
+            n_core: core refractive index
+            n_clad: cladding refractive index
+            core_res: resolution for each core circle
+            clad_res: resolution for each fiber cladding circle
+            jack_res: resolution for jacket circle (default clad_res/2)
+            spacing_factor: multiplier for fiber spacing (center-to-center)
+            include_center: whether to include center fiber
+            taper_ratio: scaling factor (initial_size/final_size)
+            r_target_mmcore_size: desired MM core size. Will override taper ratio.
+            core_mesh_size: target mesh size in cores
+            clad_mesh_size: target mesh size in cladding
+            n_jack: jacket refractive index (default same as cladding)
+            center_clad_factor: factor to enlarge center fiber cladding (simulates fusing)
+            ring_clad_factors: list/dict of cladding scaling factors for each ring
+                              Can be:
+                              - list: [ring0_factor, ring1_factor, ring2_factor, ...]
+                              - dict: {0: ring0_factor, 1: ring1_factor, ...}
+                              - None: use center_clad_factor for ring 0, 1.0 for others
+        """
+        if jack_res is None:
+            jack_res = int(clad_res / 2)
+        if n_jack is None:
+            n_jack = n_clad
+
+        # Process ring cladding factors
+        self.ring_clad_factors = self._process_ring_clad_factors(
+            ring_clad_factors, n_rings, center_clad_factor, include_center
+        )
+
+        # Calculate taper ratio based on target bundle size
+        if r_target_mmcore_size is not None:
+            # Calculate the radius of the outermost fiber bundle without taper
+            original_bundle_radius = self._calculate_bundle_radius(
+                n_rings, r_fiber_clad, spacing_factor, include_center
+            )
+            taper_ratio = r_target_mmcore_size / original_bundle_radius
+
+        # Apply taper ratio to all dimensions
+        r_fiber_clad_tapered = r_fiber_clad * taper_ratio
+        r_core_tapered = r_core * taper_ratio
+        r_jack_tapered = r_jack * taper_ratio
+
+        # Calculate fiber spacing (center-to-center distance)
+        spacing = spacing_factor * r_fiber_clad_tapered
+        fiber_positions, fiber_rings = self._hex_grid_positions_with_rings(
+            n_rings, spacing, include_center
+        )
+
+        # Create jacket
+        jacket = Circle(n_jack, "jacket")
+        jacket.make_points(r_jack_tapered, jack_res)
+        jacket.mesh_size = clad_mesh_size
+
+        # Create individual fiber claddings and cores
+        fiber_claddings = []
+        cores = []
+
+        for i, (pos, ring_idx) in enumerate(zip(fiber_positions, fiber_rings)):
+            # Get cladding scaling factor for this ring
+            clad_factor = self.ring_clad_factors.get(ring_idx, 1.0)
+            clad_radius = r_fiber_clad_tapered * clad_factor
+
+            # Create fiber cladding
+            fiber_clad = Circle(n_clad, "cladding")
+            fiber_clad.make_points(clad_radius, clad_res, center=pos)
+            fiber_clad.mesh_size = clad_mesh_size
+            fiber_claddings.append(fiber_clad)
+
+            # Create core at the same position
+            core = Circle(n_core, "core")
+            core.make_points(r_core_tapered, core_res, center=pos)
+            core.mesh_size = core_mesh_size
+            cores.append(core)
+
+        # Create arrays for claddings and cores
+        fiber_clad_array_Union = Prim2DUnion(fiber_claddings, "cladding")
+        fiber_clad_array_Union.mesh_size = clad_mesh_size
+
+        core_array = Prim2DArray(cores, "core")
+
+        # Store metadata
+        self.n_fibers = len(fiber_positions)
+        self.fiber_positions = fiber_positions
+        self.fiber_rings = fiber_rings
+        self.taper_ratio = taper_ratio
+        self.spacing = spacing
+        self.r_fiber_clad = r_fiber_clad_tapered
+        self.center_clad_factor = center_clad_factor
+        self.bundle_radius = self._calculate_actual_bundle_radius(fiber_positions, r_fiber_clad_tapered)
+
+        # Initialize waveguide with layers (jacket, fiber claddings, cores)
+        super().__init__([jacket, fiber_clad_array_Union, core_array])
+
+    def _process_ring_clad_factors(self, ring_clad_factors, n_rings, center_clad_factor, include_center):
+        """Process and validate ring cladding factors"""
+        factors = {}
+
+        if ring_clad_factors is None:
+            # Default behavior: center gets center_clad_factor, others get 1.0
+            if include_center:
+                factors[0] = center_clad_factor
+            for ring in range(1, n_rings + 1):
+                factors[ring] = 1.0
+
+        elif isinstance(ring_clad_factors, (list, tuple)):
+            # List format: [ring0, ring1, ring2, ...]
+            start_ring = 0 if include_center else 1
+            for i, factor in enumerate(ring_clad_factors):
+                ring_idx = start_ring + i
+                if ring_idx <= n_rings:
+                    factors[ring_idx] = factor
+
+            # Fill in missing rings with 1.0
+            for ring in range(start_ring, n_rings + 1):
+                if ring not in factors:
+                    factors[ring] = 1.0
+
+        elif isinstance(ring_clad_factors, dict):
+            # Dictionary format: {ring_idx: factor}
+            factors = ring_clad_factors.copy()
+
+            # Fill in missing rings with 1.0
+            start_ring = 0 if include_center else 1
+            for ring in range(start_ring, n_rings + 1):
+                if ring not in factors:
+                    factors[ring] = 1.0
+
+        else:
+            raise ValueError("ring_clad_factors must be None, list, tuple, or dict")
+
+        return factors
+
+    def _hex_grid_positions_with_rings(self, n_rings, spacing, include_center=True):
+        """Generate hexagonal grid positions for fiber centers with ring information"""
+        positions = []
+        rings = []
+
+        if include_center:
+            positions.append((0, 0))
+            rings.append(0)
+
+        for ring in range(1, n_rings + 1):
+            for i in range(6 * ring):
+                angle = 2 * np.pi * i / (6 * ring)
+                edge = int(i / ring)
+                pos_on_edge = i % ring
+                edge_angle = edge * np.pi / 3
+                edge_dir = (edge + 2) * np.pi / 3
+
+                x = ring * spacing * np.cos(edge_angle) + pos_on_edge * spacing * np.cos(edge_dir)
+                y = ring * spacing * np.sin(edge_angle) + pos_on_edge * spacing * np.sin(edge_dir)
+
+                positions.append((x, y))
+                rings.append(ring)
+
+        return positions, rings
+
+    def _calculate_bundle_radius(self, n_rings, r_fiber_clad, spacing_factor, include_center=True):
+        """Calculate the radius of the enscribing circle for the fiber bundle"""
+        if n_rings == 0:
+            return r_fiber_clad
+
+        # Calculate fiber spacing
+        spacing = spacing_factor * r_fiber_clad
+
+        # Distance from center to outermost fiber centers
+        outermost_distance = n_rings * spacing
+
+        # Add the fiber cladding radius to get the enscribing circle
+        bundle_radius = outermost_distance + r_fiber_clad
+
+        return bundle_radius
+
+    def _calculate_actual_bundle_radius(self, fiber_positions, r_fiber_clad_tapered):
+        """Calculate the actual bundle radius from fiber positions"""
+        if not fiber_positions:
+            return r_fiber_clad_tapered
+
+        # Find the maximum distance from center to any fiber edge
+        max_distance = 0
+        for pos in fiber_positions:
+            fiber_center_distance = np.sqrt(pos[0] ** 2 + pos[1] ** 2)
+            fiber_edge_distance = fiber_center_distance + r_fiber_clad_tapered
+            max_distance = max(max_distance, fiber_edge_distance)
+
+        return max_distance
+
+    def _hex_grid_positions(self, n_rings, spacing, include_center=True):
+        """Generate hexagonal grid positions for fiber centers (legacy method)"""
+        positions, _ = self._hex_grid_positions_with_rings(n_rings, spacing, include_center)
+        return positions
+
+    def make_mesh(self, algo=6, order=2, adaptive=True):
+        """Generate mesh with enhanced control for fiber bundle lanterns"""
+        mesh = super().make_mesh(algo, order, adaptive)
+
+        # Add fiber bundle-specific metadata
+        mesh.field_data.update({
+            "n_fibers": self.n_fibers,
+            "taper_ratio": self.taper_ratio,
+            "spacing": self.spacing,
+            "center_clad_factor": self.center_clad_factor,
+            "ring_clad_factors": self.ring_clad_factors,
+            "bundle_radius": self.bundle_radius
+        })
+
+        return mesh
+
+    def get_fiber_info(self):
+        """Return information about individual fibers"""
+        info = {
+            'n_fibers': self.n_fibers,
+            'fiber_positions': self.fiber_positions,
+            'fiber_rings': self.fiber_rings,
+            'fiber_cladding_radius': self.r_fiber_clad,
+            'center_enlarged': self.center_clad_factor > 1.0,
+            'center_clad_factor': self.center_clad_factor,
+            'ring_clad_factors': self.ring_clad_factors,
+            'bundle_radius': self.bundle_radius
+        }
+        return info
+
+    def get_ring_info(self):
+        """Return information about rings and their cladding factors"""
+        ring_info = {}
+        for ring_idx, factor in self.ring_clad_factors.items():
+            fiber_count = 1 if ring_idx == 0 else 6 * ring_idx
+            ring_info[ring_idx] = {
+                'cladding_factor': factor,
+                'fiber_count': fiber_count,
+                'effective_clad_radius': self.r_fiber_clad * factor
+            }
+        return ring_info
+
+class MCFPhotonicLantern(Waveguide):
+    """Photonic lantern with hexagonal grid of core, i.e. MCF based lantern."""
+
+    def __init__(self, r_jack, r_clad, r_core, n_rings, n_core, n_clad,
+                 core_res=16, clad_res=32, jack_res=None,
+                 spacing_factor=2.2, include_center=True,
+                 taper_ratio=1.0, r_target_cladding_size=None,
+                 core_mesh_size=None, clad_mesh_size=None,
+                 n_jack=None):
+        """
+        Initialize MCF photonic lantern.
+
+        Args:
+            r_jack: jacket radius
+            r_clad: cladding radius of MCF
+            r_core: core radius (final size after taper)
+            n_rings: number of hexagonal rings
+            n_core: core refractive index
+            n_clad: cladding refractive index
+            core_res: resolution for each core circle
+            clad_res: resolution for cladding circle
+            jack_res: resolution for jacket circle (default clad_res/2)
+            spacing_factor: multiplier for core spacing
+            include_center: whether to include center core
+            taper_ratio: scaling factor (initial_size/final_size)
+            r_target_cladding_size: desired MM core size. Will overide taper ratio.
+            core_mesh_size: target mesh size in cores
+            clad_mesh_size: target mesh size in cladding
+            n_jack: jacket refractive index (default same as cladding)
+        """
+        if jack_res is None:
+            jack_res = int(clad_res/2)
+        if n_jack is None:
+            n_jack = n_clad
+
+        # Calculate core positions based on taper
+        if r_target_cladding_size is not None:
+            taper_ratio = r_target_cladding_size/r_clad
+
+        spacing_base = r_core if taper_ratio == 1.0 else r_core * taper_ratio
+        r_clad=r_clad*taper_ratio
+        r_core=r_core*taper_ratio
+        r_jack=r_jack*taper_ratio
+
+        spacing = spacing_factor * spacing_base
+        core_positions = self._hex_grid_positions(n_rings, spacing, include_center)
+
+        # Create jacket
+        jacket = Circle(n_jack, "jacket")
+        jacket.make_points(r_jack, jack_res)
+        jacket.mesh_size = clad_mesh_size
+
+        # Create cladding
+        cladding = Circle(n_clad, "cladding")
+        cladding.make_points(r_clad, clad_res)
+        cladding.mesh_size = clad_mesh_size
+
+        # Create cores
+        cores = []
+        for i, pos in enumerate(core_positions):
+            core = Circle(n_core, None)  # Individual label added later
+            core.make_points(r_core, core_res, center=pos)
+            core.mesh_size = core_mesh_size
+            cores.append(core)
+
+        # Create core array
+        core_array = Prim2DArray(cores, "cores")
+
+        # Store metadata
+        self.n_cores = len(cores)
+        self.core_positions = core_positions
+        self.taper_ratio = taper_ratio
+        self.spacing = spacing
+
+        # Initialize waveguide with layers
+        super().__init__([jacket, cladding, core_array])
+
+        # Override mesh parameters for better lantern meshing
+        self.mesh_dist_scale = 0.5
+        self.mesh_dist_power = 1.2
+        self.min_mesh_size = min(r_core/4, 0.1)
+        self.max_mesh_size = r_clad/5
+
+    def _hex_grid_positions(self, n_rings, spacing, include_center=True):
+        """Generate hexagonal grid positions"""
+        positions = []
+
+        if include_center:
+            positions.append((0, 0))
+
+        for ring in range(1, n_rings + 1):
+            for i in range(6 * ring):
+                angle = 2 * np.pi * i / (6 * ring)
+                edge = int(i / ring)
+                pos_on_edge = i % ring
+                edge_angle = edge * np.pi / 3
+                edge_dir = (edge + 2) * np.pi / 3
+
+                x = ring * spacing * np.cos(edge_angle) + pos_on_edge * spacing * np.cos(edge_dir)
+                y = ring * spacing * np.sin(edge_angle) + pos_on_edge * spacing * np.sin(edge_dir)
+
+                positions.append((x, y))
+
+        return positions
+
+    def make_mesh(self, algo=6, order=2, adaptive=True):
+        """Generate mesh with enhanced control for photonic lanterns"""
+        mesh = super().make_mesh(algo, order, adaptive)
+
+        # Add lantern-specific metadata
+        mesh.field_data.update({
+            "n_cores": self.n_cores,
+            "taper_ratio": self.taper_ratio,
+            "spacing": self.spacing
+        })
+
+        return mesh
 #endregion

@@ -725,13 +725,13 @@ class PhotonicBandgapFiber(Waveguide):
         super().__init__([cladding,[hole_array,void]])
 
 
-class HexFiberBundleLantern(Waveguide):
+class FiberBundleLantern(Waveguide):
     """Photonic lantern with hexagonal arrangement of individual fibers - WaveSolve compatible"""
 
     def __init__(self, r_jack, r_fiber_clad, r_core, n_rings, n_core, n_clad,
                  core_res=16, clad_res=32, jack_res=None,
                  spacing_factor=2.0, include_center=True,
-                 taper_ratio=1.0, r_target_cladding_size=None,
+                 taper_ratio=1.0, r_target_mmcore_size=None,
                  core_mesh_size=None, clad_mesh_size=None,
                  n_jack=None, center_clad_factor=1.5,
                  ring_clad_factors=None):
@@ -751,7 +751,7 @@ class HexFiberBundleLantern(Waveguide):
             spacing_factor: multiplier for fiber spacing (center-to-center)
             include_center: whether to include center fiber
             taper_ratio: scaling factor (initial_size/final_size)
-            r_target_cladding_size: desired MM core size. Will override taper ratio.
+            r_target_mmcore_size: desired MM core size. Will override taper ratio.
             core_mesh_size: target mesh size in cores
             clad_mesh_size: target mesh size in cladding
             n_jack: jacket refractive index (default same as cladding)
@@ -763,7 +763,7 @@ class HexFiberBundleLantern(Waveguide):
                               - None: use center_clad_factor for ring 0, 1.0 for others
         """
         if jack_res is None:
-            jack_res = int(clad_res/2)
+            jack_res = int(clad_res / 2)
         if n_jack is None:
             n_jack = n_clad
 
@@ -772,9 +772,13 @@ class HexFiberBundleLantern(Waveguide):
             ring_clad_factors, n_rings, center_clad_factor, include_center
         )
 
-        # Calculate fiber positions based on taper
-        if r_target_cladding_size is not None:
-            taper_ratio = r_target_cladding_size / (2 * r_fiber_clad)
+        # Calculate taper ratio based on target bundle size
+        if r_target_mmcore_size is not None:
+            # Calculate the radius of the outermost fiber bundle without taper
+            original_bundle_radius = self._calculate_bundle_radius(
+                n_rings, r_fiber_clad, spacing_factor, include_center
+            )
+            taper_ratio = r_target_mmcore_size / original_bundle_radius
 
         # Apply taper ratio to all dimensions
         r_fiber_clad_tapered = r_fiber_clad * taper_ratio
@@ -814,7 +818,7 @@ class HexFiberBundleLantern(Waveguide):
             cores.append(core)
 
         # Create arrays for claddings and cores
-        fiber_clad_array_Union = Prim2DUnion(fiber_claddings,"cladding")
+        fiber_clad_array_Union = Prim2DUnion(fiber_claddings, "cladding")
         fiber_clad_array_Union.mesh_size = clad_mesh_size
 
         core_array = Prim2DArray(cores, "core")
@@ -827,6 +831,7 @@ class HexFiberBundleLantern(Waveguide):
         self.spacing = spacing
         self.r_fiber_clad = r_fiber_clad_tapered
         self.center_clad_factor = center_clad_factor
+        self.bundle_radius = self._calculate_actual_bundle_radius(fiber_positions, r_fiber_clad_tapered)
 
         # Initialize waveguide with layers (jacket, fiber claddings, cores)
         super().__init__([jacket, fiber_clad_array_Union, core_array])
@@ -895,6 +900,36 @@ class HexFiberBundleLantern(Waveguide):
 
         return positions, rings
 
+    def _calculate_bundle_radius(self, n_rings, r_fiber_clad, spacing_factor, include_center=True):
+        """Calculate the radius of the enscribing circle for the fiber bundle"""
+        if n_rings == 0:
+            return r_fiber_clad
+
+        # Calculate fiber spacing
+        spacing = spacing_factor * r_fiber_clad
+
+        # Distance from center to outermost fiber centers
+        outermost_distance = n_rings * spacing
+
+        # Add the fiber cladding radius to get the enscribing circle
+        bundle_radius = outermost_distance + r_fiber_clad
+
+        return bundle_radius
+
+    def _calculate_actual_bundle_radius(self, fiber_positions, r_fiber_clad_tapered):
+        """Calculate the actual bundle radius from fiber positions"""
+        if not fiber_positions:
+            return r_fiber_clad_tapered
+
+        # Find the maximum distance from center to any fiber edge
+        max_distance = 0
+        for pos in fiber_positions:
+            fiber_center_distance = np.sqrt(pos[0] ** 2 + pos[1] ** 2)
+            fiber_edge_distance = fiber_center_distance + r_fiber_clad_tapered
+            max_distance = max(max_distance, fiber_edge_distance)
+
+        return max_distance
+
     def _hex_grid_positions(self, n_rings, spacing, include_center=True):
         """Generate hexagonal grid positions for fiber centers (legacy method)"""
         positions, _ = self._hex_grid_positions_with_rings(n_rings, spacing, include_center)
@@ -910,7 +945,8 @@ class HexFiberBundleLantern(Waveguide):
             "taper_ratio": self.taper_ratio,
             "spacing": self.spacing,
             "center_clad_factor": self.center_clad_factor,
-            "ring_clad_factors": self.ring_clad_factors
+            "ring_clad_factors": self.ring_clad_factors,
+            "bundle_radius": self.bundle_radius
         })
 
         return mesh
@@ -924,7 +960,8 @@ class HexFiberBundleLantern(Waveguide):
             'fiber_cladding_radius': self.r_fiber_clad,
             'center_enlarged': self.center_clad_factor > 1.0,
             'center_clad_factor': self.center_clad_factor,
-            'ring_clad_factors': self.ring_clad_factors
+            'ring_clad_factors': self.ring_clad_factors,
+            'bundle_radius': self.bundle_radius
         }
         return info
 

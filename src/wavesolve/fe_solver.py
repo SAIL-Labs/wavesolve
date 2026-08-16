@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.linalg import eigh,eig
 from scipy.sparse.linalg import eigsh,eigs,spsolve
-from scipy.sparse import csr_matrix, lil_matrix
+from scipy.sparse import csr_matrix, csc_matrix, lil_matrix
 from wavesolve.shape_funcs import affine_transform, get_basis_funcs_affine,apply_affine_transform,evaluate_basis_funcs,get_linear_basis_funcs_affine,get_edge_linear_basis_funcs_affine
 from wavesolve.mesher import construct_meshtree
 from wavesolve.shape_funcs import *
@@ -12,8 +12,12 @@ from wavesolve.shape_funcs import compute_NN_dNdN_vec
 from wavesolve.waveguide import plot_mesh
 try:
     import pypardiso
-except:
-    pass
+except ImportError:
+    pypardiso = None
+try:
+    from scikits import umfpack as _umfpack
+except ImportError:
+    _umfpack = None
 
 #region FEM matrices
 
@@ -359,7 +363,11 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
         sparse: set True to use a sparse solver, which is can handle larger meshes but is slower
         Nmax: return only the <Nmax> largest eigenvalue/eigenvector pairs
         target_neff: search for modes with indices close to but below this value. if None, target_neff is set to the maximum index in the guide.
-        sparse_solve_mode: mode to solve the generalized eigenvalue problem. default is 'transform' -> use spsolve to convert to ordinary eigenvalue problem. 
+        sparse_solve_mode: mode to solve the generalized eigenvalue problem:
+                           'transform' (default): use scipy spsolve to convert to an ordinary eigenvalue problem
+                           'straight': plug the generalized eigenproblem directly into eigsh
+                           'pardiso': like 'transform' but using the Intel MKL Pardiso solver (requires pypardiso; x86 systems only)
+                           'umfpack': like 'transform' but using the UMFPACK solver (requires scikit-umfpack; works on Apple Silicon)
         verbose: set False to block all printouts
     RETURNS:
         w: array of eigenvalues, descending order
@@ -368,7 +376,14 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
     """
 
     assert mesh.cells[1].data.shape[1] == 3, "must use order 1 mesh for vectorial solver"
-    assert sparse_solve_mode in ["straight","transform","pardiso"], "sparse solve mode must be `straight` (plug into eigenproblem into eigsh) or `transform` (use spsolve to convert into an ordinary eigenproblen, then use eigs)"
+    if sparse_solve_mode not in ["straight","transform","pardiso","umfpack"]:
+        raise ValueError("sparse_solve_mode must be 'straight', 'transform', 'pardiso', or 'umfpack'; got %s" % repr(sparse_solve_mode))
+    if sparse_solve_mode == "pardiso" and pypardiso is None:
+        raise ImportError("sparse_solve_mode='pardiso' requires the pypardiso package, which needs Intel MKL and is "
+                          "not supported on this system (e.g. Apple Silicon). use 'umfpack' or 'transform' instead.")
+    if sparse_solve_mode == "umfpack" and _umfpack is None:
+        raise ImportError("sparse_solve_mode='umfpack' requires the scikit-umfpack package "
+                          "(conda install scikit-umfpack, or pip install scikit-umfpack with SuiteSparse available).")
 
     k = 2*np.pi/wl
 
@@ -400,7 +415,15 @@ def solve_waveguide_vec(mesh,wl,IOR_dict,plot=False,ignore_warning=False,sparse=
             w = est_eigval + 1/w
         elif sparse_solve_mode == "pardiso":
             C = pypardiso.spsolve(A - est_eigval*B,B.todense())
-            w,v = eigs(C,Nmax,which='SR') 
+            w,v = eigs(C,Nmax,which='SR')
+            w = est_eigval + 1/w
+        elif sparse_solve_mode == "umfpack":
+            lu = _umfpack.splu(csc_matrix(A - est_eigval*B))
+            Bd = np.asarray(B.todense())
+            C = np.empty_like(Bd)
+            for i in range(Bd.shape[1]):
+                C[:,i] = lu.solve(Bd[:,i])
+            w,v = eigs(C,Nmax,which='SR')
             w = est_eigval + 1/w
         else:
             w,v = eigsh(A,k=Nmax,M=B,which='SA',sigma=est_eigval)

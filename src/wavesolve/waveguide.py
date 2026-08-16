@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 import gmsh
 import meshio
 import math
+import matplotlib.path as mpath
+from wavesolve.packing import circle_packing_positions
 
 #region miscellaneous functions   
 
@@ -317,6 +319,61 @@ class Ellipse(Prim2D):
 
     def boundary_dist(self, x, y):
         return ellipse_dist(self.a,self.b,self.center,[x,y])
+
+class Polygon2D(Prim2D):
+    """ generic polygon primitive defined by an explicit (N,2) array of boundary points """
+
+    def make_points(self,points):
+        points = np.array(points)
+        self.points = points
+        self.center = np.mean(points,axis=0)
+        self.res = len(points)
+        self._path = mpath.Path(points)
+        return points
+
+    def boundary_dist(self,x,y):
+        d = np.min(np.hypot(self.points[:,0]-x,self.points[:,1]-y))
+        return -d if self._path.contains_point((x,y)) else d
+
+def fuse_circle_prims(circles,fusion_radius,label,n=None):
+    """ compute the fused outline of a group of overlapping/touching Circle primitives,
+        approximating the surface-tension smoothing that occurs when glass fibers are
+        tapered together. only the exterior outline is kept, so interior voids between
+        fibers are always treated as fully fused. concave notches on the outer boundary
+        are filled with fillets of constant curvature radius <fusion_radius>
+        (morphological closing), while convex parts of the boundary are unaffected.
+        fusion_radius=0 fills interior voids but leaves the outer notches unsmoothed.
+    Args:
+    circles: list of Circle primitives (must form a single connected region after closing)
+    fusion_radius: fillet radius, in the same units as the circle radii
+    label: material label for the returned primitive
+    n: refractive index of the returned primitive (default: index of the first circle)
+
+    Returns:
+    prim: a Polygon2D primitive tracing the fused boundary
+    """
+    try:
+        from shapely.geometry import Point
+        from shapely.geometry.polygon import orient
+        from shapely.ops import unary_union
+    except ImportError as e:
+        raise ImportError("fusion_radius requires the shapely package: pip install shapely") from e
+
+    geoms = [Point(c.center).buffer(c.radius,quad_segs=max(8,len(c.points)//4)) for c in circles]
+    fused = unary_union(geoms).buffer(fusion_radius,quad_segs=16).buffer(-fusion_radius,quad_segs=16)
+    if fused.geom_type != "Polygon":
+        raise ValueError("fused cladding does not form a single connected region; "
+                         "increase fusion_radius or reduce fiber spacing")
+    ext = orient(fused,sign=1.0).exterior
+
+    # resample the boundary at uniform arc length, matching the vertex spacing of the input circles
+    spacing = min(2*np.pi*c.radius/len(c.points) for c in circles)
+    npts = max(16,int(np.ceil(ext.length/spacing)))
+    pts = np.array([ext.interpolate(i/npts,normalized=True).coords[0] for i in range(npts)])
+
+    prim = Polygon2D(circles[0].n if n is None else n,label)
+    prim.make_points(pts)
+    return prim
 
 class Prim2DUnion(Prim2D):
     """ a union of Prim2Ds """
@@ -726,30 +783,35 @@ class PhotonicBandgapFiber(Waveguide):
 
 
 class FiberBundleLantern(Waveguide):
-    """Photonic lantern with hexagonal arrangement of individual fibers - WaveSolve compatible"""
+    """Photonic lantern made from a bundle of individual fibers, arranged on a hexagonal
+       grid or in a circle-in-circle packing - WaveSolve compatible"""
 
-    def __init__(self, r_jack, r_fiber_clad, r_core, n_rings, n_core, n_clad,
+    def __init__(self, r_jack, r_fiber_clad, r_core, n_rings=None, n_core=None, n_clad=None,
                  core_res=16, clad_res=32, jack_res=None,
                  spacing_factor=2.0, include_center=True,
                  taper_ratio=1.0, r_target_mmcore_size=None,
                  core_mesh_size=None, clad_mesh_size=None,
                  n_jack=None, center_clad_factor=1.5,
-                 ring_clad_factors=None):
+                 ring_clad_factors=None,
+                 packing="hex", n_fibers=None,
+                 fusion_radius=None):
         """
-        Initialize hexagonal fiber bundle photonic lantern.
+        Initialize fiber bundle photonic lantern.
 
         Args:
             r_jack: jacket radius
             r_fiber_clad: individual fiber cladding radius
             r_core: core radius (final size after taper)
-            n_rings: number of hexagonal rings
+            n_rings: number of hexagonal rings (required for packing="hex"; ignored for "circle")
             n_core: core refractive index
             n_clad: cladding refractive index
             core_res: resolution for each core circle
             clad_res: resolution for each fiber cladding circle
             jack_res: resolution for jacket circle (default clad_res/2)
-            spacing_factor: multiplier for fiber spacing (center-to-center)
-            include_center: whether to include center fiber
+            spacing_factor: multiplier for fiber spacing (center-to-center);
+                            2.0 means touching fibers in both packing modes
+            include_center: whether to include center fiber (hex mode only; the packing
+                            dictates the arrangement in circle mode)
             taper_ratio: scaling factor (initial_size/final_size)
             r_target_mmcore_size: desired MM core size. Will override taper ratio.
             core_mesh_size: target mesh size in cores
@@ -761,23 +823,46 @@ class FiberBundleLantern(Waveguide):
                               - list: [ring0_factor, ring1_factor, ring2_factor, ...]
                               - dict: {0: ring0_factor, 1: ring1_factor, ...}
                               - None: use center_clad_factor for ring 0, 1.0 for others
+                              In circle mode, "rings" are shells of fibers grouped by
+                              radial distance from the bundle center (innermost = 0).
+            packing: fiber arrangement; "hex" for hexagonal rings (default) or "circle"
+                     for the best-known packing of n_fibers equal circles in a circle
+                     (https://en.wikipedia.org/wiki/Circle_packing_in_a_circle)
+            n_fibers: total fiber count (required for packing="circle"; supported range 1-37)
+            fusion_radius: if set, treat the cladding bundle as fully fused: interior
+                           voids between fibers are filled, and concave notches on the
+                           OUTER boundary are smoothed with fillets of this curvature
+                           radius (models surface-tension smoothing during the taper).
+                           fusion_radius=0 fills the interior but keeps the raw outer
+                           outline. Specified in FINAL (post-taper) units, i.e. the same
+                           scale as r_target_mmcore_size and the meshed geometry.
+                           Requires the shapely package. None (default) keeps the exact
+                           union-of-circles behavior.
         """
+        if packing not in ("hex", "circle"):
+            raise ValueError("packing must be 'hex' or 'circle', got %s" % repr(packing))
+        if packing == "circle" and n_fibers is None:
+            raise ValueError("n_fibers is required when packing='circle'")
+        if packing == "hex" and n_rings is None:
+            raise ValueError("n_rings is required when packing='hex'")
+        if n_core is None or n_clad is None:
+            raise ValueError("n_core and n_clad are required")
+
         if jack_res is None:
             jack_res = int(clad_res / 2)
         if n_jack is None:
             n_jack = n_clad
 
-        # Process ring cladding factors
-        self.ring_clad_factors = self._process_ring_clad_factors(
-            ring_clad_factors, n_rings, center_clad_factor, include_center
-        )
-
         # Calculate taper ratio based on target bundle size
         if r_target_mmcore_size is not None:
             # Calculate the radius of the outermost fiber bundle without taper
-            original_bundle_radius = self._calculate_bundle_radius(
-                n_rings, r_fiber_clad, spacing_factor, include_center
-            )
+            if packing == "hex":
+                original_bundle_radius = self._calculate_bundle_radius(
+                    n_rings, r_fiber_clad, spacing_factor, include_center
+                )
+            else:
+                pos0 = circle_packing_positions(n_fibers, spacing_factor * r_fiber_clad)
+                original_bundle_radius = np.max(np.hypot(pos0[:, 0], pos0[:, 1])) + r_fiber_clad
             taper_ratio = r_target_mmcore_size / original_bundle_radius
 
         # Apply taper ratio to all dimensions
@@ -787,8 +872,22 @@ class FiberBundleLantern(Waveguide):
 
         # Calculate fiber spacing (center-to-center distance)
         spacing = spacing_factor * r_fiber_clad_tapered
-        fiber_positions, fiber_rings = self._hex_grid_positions_with_rings(
-            n_rings, spacing, include_center
+        if packing == "hex":
+            fiber_positions, fiber_rings = self._hex_grid_positions_with_rings(
+                n_rings, spacing, include_center
+            )
+        else:
+            fiber_positions, fiber_rings = self._circle_packing_positions_with_shells(
+                n_fibers, spacing
+            )
+            n_rings = max(fiber_rings)
+            # shell 0 acts like the hex center only if it is a single fiber at the origin
+            include_center = (fiber_rings.count(0) == 1 and
+                              np.hypot(*fiber_positions[fiber_rings.index(0)]) < 1e-6 * spacing)
+
+        # Process ring cladding factors
+        self.ring_clad_factors = self._process_ring_clad_factors(
+            ring_clad_factors, n_rings, center_clad_factor, include_center
         )
 
         # Create jacket
@@ -818,12 +917,19 @@ class FiberBundleLantern(Waveguide):
             cores.append(core)
 
         # Create arrays for claddings and cores
-        fiber_clad_array_Union = Prim2DUnion(fiber_claddings, "cladding")
+        if fusion_radius is not None and fusion_radius >= 0:
+            fiber_clad_array_Union = fuse_circle_prims(fiber_claddings, fusion_radius, "cladding")
+            self.clad_outline = fiber_clad_array_Union.points
+        else:
+            fiber_clad_array_Union = Prim2DUnion(fiber_claddings, "cladding")
+            self.clad_outline = None
         fiber_clad_array_Union.mesh_size = clad_mesh_size
 
         core_array = Prim2DArray(cores, "core")
 
         # Store metadata
+        self.packing = packing
+        self.fusion_radius = fusion_radius
         self.n_fibers = len(fiber_positions)
         self.fiber_positions = fiber_positions
         self.fiber_rings = fiber_rings
@@ -935,6 +1041,21 @@ class FiberBundleLantern(Waveguide):
         positions, _ = self._hex_grid_positions_with_rings(n_rings, spacing, include_center)
         return positions
 
+    def _circle_packing_positions_with_shells(self, n_fibers, spacing):
+        """Generate fiber positions from the best-known packing of n_fibers equal circles
+           in a circle, grouped into radial shells (innermost = shell 0)"""
+        pos = circle_packing_positions(n_fibers, spacing)
+        dists = np.hypot(pos[:, 0], pos[:, 1])
+        order = np.argsort(dists)
+        shells = np.zeros(n_fibers, dtype=int)
+        shell = 0
+        for prev, idx in zip(order[:-1], order[1:]):
+            if dists[idx] - dists[prev] > 0.25 * spacing:
+                shell += 1
+            shells[idx] = shell
+        positions = [tuple(p) for p in pos]
+        return positions, [int(s) for s in shells]
+
     def make_mesh(self, algo=6, order=2, adaptive=True):
         """Generate mesh with enhanced control for fiber bundle lanterns"""
         mesh = super().make_mesh(algo, order, adaptive)
@@ -942,12 +1063,16 @@ class FiberBundleLantern(Waveguide):
         # Add fiber bundle-specific metadata
         mesh.field_data.update({
             "n_fibers": self.n_fibers,
+            "packing": self.packing,
+            "fusion_radius": self.fusion_radius,
             "taper_ratio": self.taper_ratio,
             "spacing": self.spacing,
             "center_clad_factor": self.center_clad_factor,
             "ring_clad_factors": self.ring_clad_factors,
             "bundle_radius": self.bundle_radius
         })
+        if self.clad_outline is not None:
+            mesh.field_data["clad_outline"] = self.clad_outline
 
         return mesh
 
@@ -955,6 +1080,8 @@ class FiberBundleLantern(Waveguide):
         """Return information about individual fibers"""
         info = {
             'n_fibers': self.n_fibers,
+            'packing': self.packing,
+            'fusion_radius': self.fusion_radius,
             'fiber_positions': self.fiber_positions,
             'fiber_rings': self.fiber_rings,
             'fiber_cladding_radius': self.r_fiber_clad,
@@ -969,7 +1096,7 @@ class FiberBundleLantern(Waveguide):
         """Return information about rings and their cladding factors"""
         ring_info = {}
         for ring_idx, factor in self.ring_clad_factors.items():
-            fiber_count = 1 if ring_idx == 0 else 6 * ring_idx
+            fiber_count = self.fiber_rings.count(ring_idx)
             ring_info[ring_idx] = {
                 'cladding_factor': factor,
                 'fiber_count': fiber_count,

@@ -1,0 +1,24 @@
+# Conda environment for the wavesolve demo notebooks (lantern-demo*.ipynb).
+# Create with:  mamba env create -f environment.yml
+# Then install wavesolve itself:  conda activate wavesolve && pip install -e .
+name: wavesolve
+channels:
+  - conda-forge
+dependencies:
+  - python=3.13
+  - numpy
+  - scipy
+  - matplotlib
+  - numexpr
+  - meshio
+  - scikit-umfpack   # fast sparse solver (sparse_solve_mode='umfpack'; works on Apple Silicon)
+  - jupyterlab
+  - ipywidgets       # notebook progress bars (tqdm.notebook)
+  - tqdm
+  - joblib           # parallel parameter sweeps
+  - pytest
+  - pip
+  - pip:
+      - gmsh         # Gmsh binary + python API (pip wheel bundles the binary)
+      - pygmsh
+      - shapely      # fused-cladding boundary smoothing (fusion_radius)

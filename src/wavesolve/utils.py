@@ -20,11 +20,11 @@ def create_distinct_colormap(n_needed=60):
     return ListedColormap(colors)
 
 
-def plot_modes(w, v, m, wl, IOR_dict, target_radius=None,
+def plot_modes(w, v, m, wl, IOR_dict, target_radius=None, outline=None,
                basefigsize=2, no_cols=6, circle_color='white',
                circle_linewidth=1, circle_linestyle='dashed', plot_vector=True):
     """
-    Plot vector modes in subplots with circles overlay.
+    Plot vector modes in subplots with the MM core boundary overlaid.
 
     Parameters:
     w (array): Eigenvalues
@@ -33,16 +33,23 @@ def plot_modes(w, v, m, wl, IOR_dict, target_radius=None,
     wl (float): Wavelength
     IOR_dict (dict): Index of refraction dictionary
     target_radius (float): Radius of the circle to plot (if None, extracted from fiber bundle)
+    outline ((N,2) array): explicit boundary polygon to plot instead of a circle.
+                           If None, the fused cladding outline stored in the mesh
+                           (see FiberBundleLantern fusion_radius) is used when present.
     basefigsize (float): Base size for subplot dimensions (default: 2)
     no_cols (int): Number of columns in subplot grid (default: 6)
-    circle_color (str): Color of the circle (default: 'white')
-    circle_linewidth (float): Line width of the circle (default: 1)
-    circle_linestyle (str): Line style of the circle (default: 'dashed')
+    circle_color (str): Color of the boundary line (default: 'white')
+    circle_linewidth (float): Line width of the boundary line (default: 1)
+    circle_linestyle (str): Line style of the boundary line (default: 'dashed')
     """
     # Calculate effective indices and IOR bounds internally
     eff_indexs = get_eff_index(wl, w)
     IORs = [ior[1] for ior in IOR_dict.items()]
     nmin, nmax = min(IORs), max(IORs)
+
+    # Prefer an explicit outline, then the fused cladding outline carried by the mesh
+    if outline is None and hasattr(m, 'field_data'):
+        outline = m.field_data.get("clad_outline", None)
 
     # Extract target_radius from fiber bundle if not provided
     if target_radius is None and hasattr(m, 'r_target_mmcore_size'):
@@ -52,7 +59,7 @@ def plot_modes(w, v, m, wl, IOR_dict, target_radius=None,
                    if w_val >= 0 and nmin <= ne <= nmax])
 
     # Create subplot grid
-    n_rows = round(n_modes / no_cols)
+    n_rows = max(1, int(np.ceil(n_modes / no_cols)))
     fig, axs = plt.subplots(n_rows, no_cols, sharey=True,
                             figsize=(basefigsize * no_cols, basefigsize * n_rows))
 
@@ -60,10 +67,15 @@ def plot_modes(w, v, m, wl, IOR_dict, target_radius=None,
     if n_rows == 1:
         axs = axs.reshape(1, -1)
 
-    # Create circle coordinates
-    theta = np.linspace(0, 2 * np.pi, 100)
-    circle_x = target_radius * np.cos(theta)
-    circle_y = target_radius * np.sin(theta)
+    # Create boundary coordinates: fused outline if available, else a circle
+    if outline is not None:
+        outline = np.asarray(outline)
+        circle_x = np.append(outline[:, 0], outline[0, 0])
+        circle_y = np.append(outline[:, 1], outline[0, 1])
+    else:
+        theta = np.linspace(0, 2 * np.pi, 100)
+        circle_x = target_radius * np.cos(theta)
+        circle_y = target_radius * np.sin(theta)
 
     plot_index = 0
     for _w, _v, ne in zip(w, v, eff_indexs):

@@ -1,4 +1,10 @@
 .gitattributes
 *.json
-__pycache__/*
+__pycache__/
 testing/*
+docs/superpowers/
+CLAUDE.md
+lantern-demo-19*.ipynb
+simulation_results*/
+.ipynb_checkpoints/
+*.egg-info/
